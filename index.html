@@ -1,34 +1,238 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>PCD viewer</title>
+    <title>PCD → Nav2 Map</title>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, user-scalable=yes, initial-scale=1.0" />
-    <link rel="stylesheet" href="./css/style.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>document.write(`<link rel="stylesheet" href="css/style.css?v=${Date.now()}" />`);</script>
+    <noscript><link rel="stylesheet" href="css/style.css" /></noscript>
   </head>
   <body>
-    <!-- File input controls -->
-    <div id="file-input-container">
-      <input type="file" id="pcd-file-input" accept=".pcd" />
-      <label for="pcd-file-input" id="pcd-file-label">📂 Load PCD File</label>
-      <span id="file-name-display"></span>
-      <div id="button-group">
-        <button id="export-pcd-button">💾 Export Filtered PCD</button>
-        <button id="delete-pcd-button">🗑️ Delete PCD</button>
+    <input type="file" id="file-input" accept=".pcd,.ply,.xyz,.txt" class="visually-hidden" />
+
+    <main id="viewport">
+      <div id="scene">
+        <!-- the WebGL canvas and the label layer are inserted here by app.js -->
+        <canvas id="lasso-canvas" aria-hidden="true" hidden></canvas>
+
+        <div id="toolbar" role="toolbar" aria-label="View tools" hidden>
+          <button type="button" id="tb-orbit" title="Navigate: drag to orbit (Esc)">🖐<span class="lbl"> Navigate</span></button>
+          <button type="button" id="tb-measure" title="Measure distances and angles (M)">📏<span class="lbl"> Measure</span></button>
+          <button type="button" id="tb-lasso" title="Lasso: select points to delete (L)">⬚<span class="lbl"> Lasso</span></button>
+          <span class="tb-sep"></span>
+          <button type="button" id="tb-top" title="Top-down view (T)">⬇<span class="lbl"> Top</span></button>
+          <button type="button" id="tb-reset" title="Reset camera (double-click empty space)">⌂<span class="lbl"> Reset</span></button>
+          <button type="button" id="tb-map" title="Show the PGM next to the cloud (P)">🗺<span class="lbl"> PGM view</span></button>
+          <span class="tb-sep"></span>
+          <button type="button" id="tb-undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+          <button type="button" id="tb-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
+          <button type="button" id="tb-help" title="Mouse and keyboard help (?)" aria-label="Help">?</button>
+        </div>
+
+        <div id="action-bar" role="toolbar" aria-live="polite" hidden></div>
+
+        <div id="legend" hidden>
+          <div id="legend-title"></div>
+          <div id="legend-bar"></div>
+          <div id="legend-labels"><span id="legend-min"></span><span id="legend-max"></span></div>
+        </div>
+        <div id="pane-tag-pcd" class="pane-tag" hidden>PCD · points used for the map <span class="chip red"></span> removed by radius filter</div>
       </div>
-    </div>
 
-    <!-- Import map for Three.js modules -->
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"
-        }
-      }
+      <section id="pgm-pane" aria-label="PGM map preview" hidden>
+        <canvas id="pgm-canvas"></canvas>
+        <div class="pane-tag">PGM <span class="chip black"></span> occupied <span class="chip white"></span> free</div>
+        <div id="pgm-tools">
+          <button type="button" class="btn small" id="pgm-fit" title="Fit the map (double-click)">Fit</button>
+          <button type="button" class="btn small ghost" id="pgm-close" title="Close PGM view (P)" aria-label="Close PGM view">✕</button>
+        </div>
+        <div id="pgm-busy" hidden>Updating…</div>
+        <p id="pgm-empty" hidden></p>
+      </section>
+
+      <section id="welcome">
+        <h1>PCD → Nav2 Map</h1>
+        <p>Clean a SLAM point cloud and turn it into a 2D occupancy map (PGM) for ROS 2 Nav2.</p>
+        <label for="file-input" class="btn primary big">Open point cloud…</label>
+        <p class="muted">or drop a <code>.pcd</code>, <code>.ply</code> or <code>.xyz</code> file anywhere</p>
+        <p id="welcome-status" role="status" aria-live="polite"></p>
+        <ol class="steps">
+          <li><strong>Level the floor</strong>: the floor becomes z = 0</li>
+          <li><strong>Crop</strong> X / Y / Z live with sliders</li>
+          <li><strong>Clean up</strong> noise and moving objects</li>
+          <li><strong>PGM map</strong>: PCD and PGM side by side, download <code>map.pgm</code> + <code>map.yaml</code></li>
+        </ol>
+        <p class="muted small">Everything runs locally in your browser. Nothing is uploaded.</p>
+      </section>
+
+      <footer id="statusbar" hidden>
+        <span id="status-stats"></span>
+        <span id="status-msg" role="status" aria-live="polite"></span>
+        <span id="status-xyz"></span>
+      </footer>
+    </main>
+
+    <aside id="panel" hidden>
+      <header class="panel-head">
+        <div class="file">
+          <div id="file-name"></div>
+          <div id="file-info" class="muted small"></div>
+        </div>
+        <label for="file-input" class="btn small" title="Open another file">Open…</label>
+        <button type="button" id="close-btn" class="btn small ghost" title="Close file" aria-label="Close file">✕</button>
+      </header>
+
+      <section class="step">
+        <h2><span class="num">1</span> Level the floor</h2>
+        <button type="button" class="btn primary" id="align-btn" title="Finds the floor and rotates the cloud so the floor is at z = 0">Align to floor</button>
+        <p id="align-state" class="ok small" hidden>✓ Floor is at z = 0</p>
+        <details>
+          <summary>Advanced</summary>
+          <div class="grid2">
+            <label class="field"><span>Floor tolerance (m)</span><input type="number" data-bind="ops.groundThreshold" min="0.005" max="0.5" step="0.005" /></label>
+            <label class="field"><span>Max floor tilt (°)</span><input type="number" data-bind="ops.groundTilt" min="1" max="90" step="1" /></label>
+          </div>
+          <p class="hint">Or apply pcd2pgm's <code>odom_to_lidar_odom</code> by hand (the cloud is moved by its inverse):</p>
+          <div class="grid3">
+            <label class="field"><span>x (m)</span><input type="number" data-bind="tf.x" step="0.01" /></label>
+            <label class="field"><span>y (m)</span><input type="number" data-bind="tf.y" step="0.01" /></label>
+            <label class="field"><span>z (m)</span><input type="number" data-bind="tf.z" step="0.01" /></label>
+            <label class="field"><span>roll (rad)</span><input type="number" data-bind="tf.roll" step="0.01" /></label>
+            <label class="field"><span>pitch (rad)</span><input type="number" data-bind="tf.pitch" step="0.01" /></label>
+            <label class="field"><span>yaw (rad)</span><input type="number" data-bind="tf.yaw" step="0.01" /></label>
+          </div>
+          <button type="button" class="btn" id="tf-btn">Apply transform</button>
+        </details>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">2</span> Crop <button type="button" class="btn small ghost push" id="crop-reset" title="Show the whole cloud again">Reset</button></h2>
+        <div class="dual">
+          <span class="ax">X</span>
+          <input type="number" data-bind="crop.xmin" step="0.1" aria-label="X min (m)" />
+          <div class="dual-track">
+            <input type="range" data-bind="crop.xmin" data-axis="0" aria-label="X min" />
+            <input type="range" data-bind="crop.xmax" data-axis="0" aria-label="X max" />
+          </div>
+          <input type="number" data-bind="crop.xmax" step="0.1" aria-label="X max (m)" />
+        </div>
+        <div class="dual">
+          <span class="ax">Y</span>
+          <input type="number" data-bind="crop.ymin" step="0.1" aria-label="Y min (m)" />
+          <div class="dual-track">
+            <input type="range" data-bind="crop.ymin" data-axis="1" aria-label="Y min" />
+            <input type="range" data-bind="crop.ymax" data-axis="1" aria-label="Y max" />
+          </div>
+          <input type="number" data-bind="crop.ymax" step="0.1" aria-label="Y max (m)" />
+        </div>
+        <div class="dual">
+          <span class="ax">Z</span>
+          <input type="number" data-bind="band.min" step="0.1" aria-label="Z min (m)" />
+          <div class="dual-track">
+            <input type="range" data-bind="band.min" data-axis="2" aria-label="Z min" />
+            <input type="range" data-bind="band.max" data-axis="2" aria-label="Z max" />
+          </div>
+          <input type="number" data-bind="band.max" step="0.1" aria-label="Z max (m)" />
+        </div>
+        <p class="hint">Only the points inside the box are shown, cleaned and put into the map. Z = obstacle heights (<code>thre_z_min</code> / <code>thre_z_max</code>).</p>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">3</span> Clean up</h2>
+        <div class="btn-row">
+          <button type="button" class="btn" id="sor-btn" title="Highlights isolated points (noise, reflections) in red before removing them">Find noise</button>
+          <button type="button" class="btn" id="lasso-btn" title="Draw around people, cars… and delete them (L)">Lasso</button>
+          <button type="button" class="btn" id="voxel-btn" title="Keep one point per voxel">Downsample</button>
+        </div>
+        <details>
+          <summary>Settings</summary>
+          <div class="grid3">
+            <label class="field" title="Neighbours used by noise detection"><span>Noise k</span><input type="number" data-bind="ops.sorK" min="1" max="50" step="1" /></label>
+            <label class="field" title="Lower removes more points"><span>Strictness</span><input type="number" data-bind="ops.sorStd" min="0.1" max="5" step="0.1" /></label>
+            <label class="field"><span>Voxel (m)</span><input type="number" data-bind="ops.voxel" min="0.001" max="1" step="0.01" /></label>
+          </div>
+        </details>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">4</span> PGM map <button type="button" class="btn small primary push" id="map-view-btn" title="PCD and PGM side by side (P)">Show PGM</button></h2>
+        <div class="grid3">
+          <label class="field" title="thre_radius: a point needs neighbours within this distance"><span>Radius (m)</span><input type="number" data-bind="ops.radius" min="0" max="2" step="0.01" /></label>
+          <label class="field" title="thres_point_count: min. other points within the radius (0 = off)"><span>Neighbours</span><input type="number" data-bind="ops.minNeighbors" min="0" max="200" step="1" /></label>
+          <label class="field" title="map_resolution"><span>Cell (m)</span><input type="number" data-bind="ops.mapResolution" min="0.01" max="1" step="0.01" /></label>
+        </div>
+        <label class="check small" title="flag_pass_through"><input type="checkbox" data-bind="ops.invert" /><span>Use points <i>outside</i> the Z range</span></label>
+        <p id="map-info" class="hint" aria-live="polite"></p>
+        <button type="button" class="btn primary" id="map-btn" title="Same files as map_saver_cli, in the current (aligned) frame">Download map (.pgm + .yaml)</button>
+        <div class="row">
+          <select data-bind="ops.cloudFormat" aria-label="Point cloud format">
+            <option value="pcd">PCD</option>
+            <option value="ply">PLY</option>
+          </select>
+          <button type="button" class="btn" id="cloud-btn" title="Points inside the crop box, in the original file coordinates">Download cloud</button>
+        </div>
+      </section>
+
+      <details class="step">
+        <summary>Display</summary>
+        <div class="range-field">
+          <span>Point size</span>
+          <input type="range" data-bind="view.pointSize" min="0.5" max="8" step="0.5" aria-label="Point size" />
+          <input type="number" data-bind="view.pointSize" min="0.5" max="8" step="0.5" aria-label="Point size value" />
+        </div>
+        <label class="field"><span>Color by</span><select data-bind="view.colorMode" id="color-mode"></select></label>
+        <label class="field"><span>Colormap</span>
+          <select data-bind="view.colormap">
+            <option value="turbo">Turbo</option>
+            <option value="viridis">Viridis</option>
+            <option value="inferno">Inferno</option>
+            <option value="grayscale">Grayscale</option>
+          </select>
+        </label>
+      </details>
+    </aside>
+
+    <div id="context-menu" role="menu" hidden></div>
+    <div id="drop-hint" aria-hidden="true">Drop the point cloud to open it</div>
+
+    <dialog id="help-dialog">
+      <h2>Mouse &amp; keyboard</h2>
+      <table>
+        <tr><td>Left drag</td><td>Orbit</td></tr>
+        <tr><td>Middle drag / Shift + drag / arrow keys</td><td>Pan</td></tr>
+        <tr><td>Wheel</td><td>Zoom toward the cursor</td></tr>
+        <tr><td>Double-click a point</td><td>Focus on it</td></tr>
+        <tr><td>Double-click empty space</td><td>Reset view</td></tr>
+        <tr><td>Right-click (without dragging)</td><td>Menu: focus, set Z min / Z max, crop X/Y around a point</td></tr>
+        <tr><td><kbd>M</kbd> / <kbd>L</kbd> / <kbd>T</kbd> / <kbd>P</kbd></td><td>Measure / Lasso / Top view / PGM view</td></tr>
+        <tr><td>PGM: wheel / drag / double-click</td><td>Zoom / pan / fit</td></tr>
+        <tr><td><kbd>Del</kbd> / <kbd>Enter</kbd></td><td>Lasso: delete / keep selection</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Cancel the current tool</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Undo / Redo (10 steps)</td></tr>
+      </table>
+      <form method="dialog"><button class="btn primary">Close</button></form>
+    </dialog>
+
+    <script>
+      // Load the local files with a per-page-load ?v= query so a browser never runs a stale
+      // cached copy (simple static servers like `python -m http.server` send no cache headers).
+      // Three.js comes from a versioned CDN URL and stays cached.
+      const v = Date.now();
+      const local = (p) => new URL(p, location.href).href;
+      const map = document.createElement("script");
+      map.type = "importmap";
+      map.textContent = JSON.stringify({
+        imports: {
+          three: "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/",
+          [local("js/algorithms.js")]: local(`js/algorithms.js?v=${v}`),
+        },
+      });
+      document.currentScript.after(map);
+      const app = document.createElement("script");
+      app.type = "module";
+      app.src = `js/app.js?v=${v}`;
+      map.after(app);
     </script>
-
-    <!-- Main application script -->
-    <script type="module" src="./js/app.js"></script>
   </body>
 </html>
