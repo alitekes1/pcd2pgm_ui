@@ -332,6 +332,7 @@ function status(msg, { error = false, sticky = false } = {}) {
   // The status bar is hidden on the welcome screen.
   $("welcome-status").textContent = state.cloud ? "" : msg;
   $("welcome-status").classList.toggle("error", error);
+  $("welcome-status").classList.toggle("working", !state.cloud && sticky);
 }
 
 async function busy(label, fn) {
@@ -362,10 +363,18 @@ const xyzLoader = new XYZLoader();
 
 async function parseFile(file) {
   const ext = file.name.split(".").pop().toLowerCase();
-  if (ext === "pcd") return pcdLoader.parse(await file.arrayBuffer()).geometry;
-  if (ext === "ply") return plyLoader.parse(await file.arrayBuffer());
-  if (ext === "xyz" || ext === "txt") return xyzLoader.parse(await file.text());
-  throw new Error(`unsupported file type ".${ext}" (use .pcd, .ply or .xyz)`);
+  const parse = {
+    pcd: async () => pcdLoader.parse(await file.arrayBuffer()).geometry,
+    ply: async () => plyLoader.parse(await file.arrayBuffer()),
+    xyz: async () => xyzLoader.parse(await file.text()),
+  }[ext === "txt" ? "xyz" : ext];
+  if (!parse) throw new Error(`unsupported file type ".${ext}" (use .pcd, .ply or .xyz)`);
+  try {
+    return await parse();
+  } catch (e) {
+    console.error(e);
+    throw new Error(`this is not a valid .${ext === "txt" ? "xyz" : ext} file`);
+  }
 }
 
 // Keep only point attributes we use and drop NaN/Inf points (organized clouds contain them).

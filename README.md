@@ -1,10 +1,28 @@
-# PCD Tools
+# pcd2pgm_ui
 
-A browser tool that turns a SLAM point cloud into a 2D occupancy map (PGM) for ROS 2 Nav2. The PCD and the PGM are shown side by side, and the map updates live while you tune. Everything runs locally; nothing is uploaded.
+A browser tool that turns a SLAM point cloud into a 2D occupancy map (PGM) for ROS 2 Nav2. The PCD and the PGM are shown side by side, and the map updates live while you tune. No ROS install needed: everything runs locally in the browser and nothing is uploaded.
 
-![PCD and PGM side by side](docs/indoor_pcd2.png)
+![Start screen](docs/welcome.png)
 
-## Workflow
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/alitekes1/pcd2pgm_ui.git
+   ```
+2. Navigate to the project directory:
+   ```bash
+   cd pcd2pgm_ui
+   ```
+3. Serve the folder with any static web server, for example:
+   ```bash
+   python3 -m http.server 8000
+   ```
+   Then open `http://localhost:8000`. Three.js is loaded from a CDN, so the first load needs internet access. Local files get a per-load `?v=` query, so after an update a normal reload is enough.
+
+## How it works
+
+![PCD and PGM side by side](docs/indoor_pcd.png)
 
 Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, binary or binary_compressed. Then follow the four steps in the side panel:
 
@@ -15,7 +33,7 @@ Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, 
 | **3. Clean up** | *Find noise* (statistical outlier removal; the points it would remove turn red, then you choose *Remove* or *Cancel*), *Lasso* to erase people, cars and other objects, and *Downsample* (voxel grid). |
 | **4. PGM map** | *Show PGM* opens the side-by-side view. Then download `map.pgm` + `map.yaml`, or the cleaned cloud (PCD / PLY). |
 
-![Opened cloud, floor aligned](docs/indoor_pcd.png)
+![Opened cloud, floor aligned](docs/indoor_pcd2.png)
 
 ### Crop
 
@@ -43,24 +61,6 @@ Points removed by the radius filter are drawn in red in the PCD pane; they are n
 
 - **Map**: `map.pgm` + `map.yaml`, the same files `map_saver_cli` writes (trinary, occupied = 0, free = 254). The map is in the current frame, i.e. after floor alignment or the manual transform.
 - **Cloud**: the points inside the crop box, as binary PCD or PLY, in the original file coordinates. RGB and intensity are kept.
-
-## Setup
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/alitekes1/pcd_tools.git
-   ```
-2. Navigate to the project directory:
-   ```bash
-   cd pcd_tools
-   ```
-3. Serve the folder with any static web server, for example:
-   ```bash
-   python3 -m http.server 8000
-   ```
-   Then open `http://localhost:8000`. Three.js is loaded from a CDN, so the first load needs internet access. Local files get a per-load `?v=` query, so after an update a normal reload is enough.
-
-![Start screen](docs/welcome.png)
 
 ## Usage
 

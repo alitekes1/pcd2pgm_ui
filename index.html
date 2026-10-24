@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>PCD → Nav2 Map</title>
+    <title>pcd2pgm_ui: point cloud to Nav2 map</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>document.write(`<link rel="stylesheet" href="css/style.css?v=${Date.now()}" />`);</script>
@@ -51,18 +51,44 @@
       </section>
 
       <section id="welcome">
-        <h1>PCD → Nav2 Map</h1>
-        <p>Clean a SLAM point cloud and turn it into a 2D occupancy map (PGM) for ROS 2 Nav2.</p>
-        <label for="file-input" class="btn primary big">Open point cloud…</label>
-        <p class="muted">or drop a <code>.pcd</code>, <code>.ply</code> or <code>.xyz</code> file anywhere</p>
-        <p id="welcome-status" role="status" aria-live="polite"></p>
-        <ol class="steps">
-          <li><strong>Level the floor</strong>: the floor becomes z = 0</li>
-          <li><strong>Crop</strong> X / Y / Z live with sliders</li>
-          <li><strong>Clean up</strong> noise and moving objects</li>
-          <li><strong>PGM map</strong>: PCD and PGM side by side, download <code>map.pgm</code> + <code>map.yaml</code></li>
+        <header class="w-top">
+          <span class="w-logo">pcd2pgm<span>_ui</span></span>
+          <a class="w-link" href="https://github.com/alitekes1/pcd2pgm_ui" target="_blank" rel="noopener">GitHub ↗</a>
+        </header>
+
+        <div class="w-main">
+          <div class="w-intro">
+            <h1>Point cloud <span class="arrow">→</span> <span class="nw">Nav2 map</span></h1>
+            <p class="w-lead">Clean a SLAM point cloud and export a 2D occupancy map (<code>map.pgm</code> + <code>map.yaml</code>). See the PCD and the PGM side by side while you tune.</p>
+
+            <label for="file-input" id="drop-zone">
+              <span class="dz-icon" aria-hidden="true">⇪</span>
+              <span class="dz-title">Drop a point cloud here</span>
+              <span class="dz-sub"><code>.pcd</code> · <code>.ply</code> · <code>.xyz</code></span>
+              <span class="btn primary big">Choose file…</span>
+              <span id="welcome-status" role="status" aria-live="polite"></span>
+            </label>
+
+            <ul class="w-badges">
+              <li>🔒 Runs in your browser. Nothing is uploaded</li>
+              <li>🧩 No ROS install needed</li>
+              <li>📄 Same output as <code>map_saver_cli</code></li>
+            </ul>
+          </div>
+
+          <figure class="w-preview">
+            <img src="docs/indoor_pcd.png" alt="A point cloud shown from above next to the generated PGM map" />
+          </figure>
+        </div>
+
+        <ol class="w-steps">
+          <li><span class="num">1</span><b>Level the floor</b><span>Auto-rotate so the floor is z = 0</span></li>
+          <li><span class="num">2</span><b>Crop</b><span>X / Y / Z sliders, applied live</span></li>
+          <li><span class="num">3</span><b>Clean up</b><span>Remove noise, lasso-erase objects</span></li>
+          <li><span class="num">4</span><b>PGM map</b><span>Tune live, download for Nav2</span></li>
         </ol>
-        <p class="muted small">Everything runs locally in your browser. Nothing is uploaded.</p>
+
+        <p class="w-foot">Map pipeline from <a href="https://github.com/LihanChen2004/pcd2pgm" target="_blank" rel="noopener">pcd2pgm</a>, the same parameters work in both.</p>
       </section>
 
       <footer id="statusbar" hidden>
