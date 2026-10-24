@@ -1607,6 +1607,16 @@ function onGeometryChanged() {
 }
 
 // ---------------------------------------------------------------------------
+// Reload / close tab (Ctrl+R, F5, ✕) with a cloud open: the browser asks first,
+// because the edits, crop and map settings would be lost. Browsers show their own
+// generic text; a custom message is not allowed.
+window.addEventListener("beforeunload", (e) => {
+  if (!state.cloud) return;
+  e.preventDefault();
+  e.returnValue = ""; // still required by some browsers
+});
+
+// ---------------------------------------------------------------------------
 // Drag & drop
 window.addEventListener("dragover", (e) => {
   e.preventDefault();
