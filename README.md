@@ -2,7 +2,7 @@
 
 A browser tool that turns a SLAM point cloud into a 2D occupancy map (PGM) for ROS 2 Nav2. The PCD and the PGM are shown side by side, and the map updates live while you tune. No ROS install needed: everything runs locally in the browser and nothing is uploaded.
 
-![Start screen](docs/welcome.png)
+![pcd2pgm_ui](docs/showcase.gif)
 
 ## Installation
 
@@ -22,7 +22,9 @@ A browser tool that turns a SLAM point cloud into a 2D occupancy map (PGM) for R
 
 ## How it works
 
-![PCD and PGM side by side](docs/indoor_pcd.png)
+![pcd2pgm_ui start screen](docs/main.png)
+
+![PCD and PGM side by side](docs/pcd-pgm-side-by-side.png)
 
 Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, binary or binary_compressed. Then follow the four steps in the side panel:
 
@@ -33,11 +35,9 @@ Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, 
 | **3. Clean up** | *Find noise* (statistical outlier removal; the points it would remove turn red, then you choose *Remove* or *Cancel*), *Lasso* to erase people, cars and other objects, and *Downsample* (voxel grid). |
 | **4. PGM map** | *Show PGM* opens the side-by-side view. Then download `map.pgm` + `map.yaml`, or the cleaned cloud (PCD / PLY). |
 
-![Opened cloud, floor aligned](docs/indoor_pcd2.png)
+![Opened cloud, floor aligned](docs/cloud-3d.png)
 
 ### Crop
-
-![Live X / Y / Z crop](docs/crop.png)
 
 The crop box is shown while something is cut away. Z starts at the full range; when the PGM view is opened for the first time it is set to pcd2pgm's default of 0.1 … 1.5 m above the floor. You can also right-click a point to crop X/Y around it or to use its height as Z min / Z max.
 

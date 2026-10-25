@@ -77,7 +77,7 @@
           </div>
 
           <figure class="w-preview">
-            <img src="docs/indoor_pcd.png" alt="A point cloud shown from above next to the generated PGM map" />
+            <img src="docs/showcase.gif" alt="pcd2pgm_ui showcase: 3D point cloud, aligned cloud, and the PCD next to the generated PGM map" />
           </figure>
         </div>
 
@@ -112,6 +112,25 @@
         <h2><span class="num">1</span> Level the floor</h2>
         <button type="button" class="btn primary" id="align-btn" title="Finds the floor and rotates the cloud so the floor is at z = 0">Align to floor</button>
         <p id="align-state" class="ok small" hidden>✓ Floor is at z = 0</p>
+        <details open>
+          <summary>Rotate (roll / pitch / yaw)</summary>
+          <div class="range-field">
+            <span>Roll</span>
+            <input type="range" data-bind="rot.roll" min="-180" max="180" step="1" aria-label="Roll (deg)" />
+            <input type="number" data-bind="rot.roll" min="-180" max="180" step="1" aria-label="Roll value (deg)" />
+          </div>
+          <div class="range-field">
+            <span>Pitch</span>
+            <input type="range" data-bind="rot.pitch" min="-180" max="180" step="1" aria-label="Pitch (deg)" />
+            <input type="number" data-bind="rot.pitch" min="-180" max="180" step="1" aria-label="Pitch value (deg)" />
+          </div>
+          <div class="range-field">
+            <span>Yaw</span>
+            <input type="range" data-bind="rot.yaw" min="-180" max="180" step="1" aria-label="Yaw (deg)" />
+            <input type="number" data-bind="rot.yaw" min="-180" max="180" step="1" aria-label="Yaw value (deg)" />
+          </div>
+          <p class="hint">Drag to rotate the cloud live about its centre; release to apply. Undo with Ctrl+Z. The PGM follows.</p>
+        </details>
         <details>
           <summary>Advanced</summary>
           <div class="grid2">

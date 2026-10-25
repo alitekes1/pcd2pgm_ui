@@ -107,13 +107,15 @@ const state = {
   pending: null, // processing preview waiting for Apply/Cancel: { keep, label, text, applyLabel }
   mapView: false, // PCD | PGM side by side
   geomVersion: 0,
+  rotating: false, // true only during a rotation commit, so onGeometryChanged keeps the sliders
 };
 const band = { min: 0.1, max: 1.5 }; // pcd2pgm thre_z_min / thre_z_max (view-frame z)
 const crop = { xmin: -10, xmax: 10, ymin: -10, ymax: 10 }; // crop box X/Y (Z is `band`), always applied
 const view = { pointSize: 1.0, colorMode: "height", colormap: "turbo", rangeMin: 0, rangeMax: 1, topView: false };
 const ops = { voxel: 0.05, sorK: 8, sorStd: 1.0, groundThreshold: 0.05, groundTilt: 20, mapResolution: 0.05, invert: false, radius: 0.1, minNeighbors: 10, cloudFormat: "pcd" };
 const tf = { x: 0, y: 0, z: 0, roll: 0, pitch: 0, yaw: 0 }; // pcd2pgm odom_to_lidar_odom
-const model = { band, crop, view, ops, tf };
+const rot = { roll: 0, pitch: 0, yaw: 0 }; // live roll/pitch/yaw sliders, degrees
+const model = { band, crop, view, ops, tf, rot };
 
 const uniforms = {
   size: { value: 1 },
@@ -623,6 +625,56 @@ function applyManualTransform() {
   g.applyMatrix4(m);
   const v = [tf.x, tf.y, tf.z, tf.roll, tf.pitch, tf.yaw].map((n) => +n.toFixed(4)).join(", ");
   commit(g, `Transform [${v}] applied (inverse, like pcd2pgm)`, { matrix: m.multiply(state.matrix), aligned: false });
+}
+
+// Live roll/pitch/yaw rotation about the cloud centre, driven by sliders in
+// Live, cumulative roll/pitch/yaw about the cloud centre, driven by sliders in
+// Live, cumulative roll/pitch/yaw about the cloud centre, driven by sliders in
+// `rot` (degrees). The sliders show the rotation applied on top of a reference
+// pose and never reset on their own, so the value is the "loaded vs. now" angle.
+// `rotRef` is that reference: the un-rotated geometry + frame the angles are
+// measured from. A rotation commit keeps the reference and the slider values; any
+// other edit (crop, lasso, align, undo, new file) replaces the reference and zeroes
+// the sliders, because "now" has a new baseline. `state.rotating` tells
+// onGeometryChanged which of the two just happened (set only during a rotation commit).
+let rotRef = null; // { geometry, matrix }
+function setRotRef() {
+  rotRef = { geometry: geom().clone(), matrix: state.matrix.clone() };
+}
+function rotMatrix() {
+  const d2r = Math.PI / 180;
+  const b = state.bounds;
+  const c = new THREE.Vector3((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
+  const R = new THREE.Matrix4().makeRotationFromEuler(
+    new THREE.Euler(rot.roll * d2r, rot.pitch * d2r, rot.yaw * d2r, "XYZ")
+  );
+  // M = T(c) * R * T(-c): rotate in place, around the cloud centre
+  return new THREE.Matrix4().makeTranslation(c.x, c.y, c.z)
+    .multiply(R)
+    .multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
+}
+function previewRotation() {
+  if (!state.cloud) return;
+  if (!rotRef) setRotRef();
+  state.cloud.points.matrixAutoUpdate = false;
+  state.cloud.points.matrix.copy(rotMatrix());
+  render();
+}
+function applyRotation() {
+  if (!state.cloud || !rotRef) return;
+  state.cloud.points.matrix.identity();
+  state.cloud.points.matrixAutoUpdate = true;
+  const m = rotMatrix();
+  // Bake the absolute rotation onto the *reference* geometry, not the already-
+  // rotated one, so dragging replaces the rotation instead of compounding it.
+  const g = rotRef.geometry.clone();
+  g.applyMatrix4(m);
+  const label = rot.roll || rot.pitch || rot.yaw
+    ? `Rotated from load (roll ${rot.roll}°, pitch ${rot.pitch}°, yaw ${rot.yaw}°)`
+    : "Rotation cleared";
+  state.rotating = true; // tell onGeometryChanged to keep rotRef and the slider values
+  commit(g, label, { matrix: m.multiply(rotRef.matrix), aligned: state.aligned });
+  state.rotating = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1545,6 +1597,7 @@ function onModelChange(group, key) {
     if (key === "min") band.max = band.min;
     else band.min = band.max;
   }
+  if (group === "rot") return previewRotation(); // live, cheap; baked on slider release
   if (group === "crop") {
     for (const [lo, hi] of [["xmin", "xmax"], ["ymin", "ymax"]]) {
       if (crop[lo] > crop[hi]) {
@@ -1577,6 +1630,8 @@ for (const el of boundInputs) {
   });
   // Show the clamped / normalized value once the user leaves a number field.
   if (el.type === "number") el.addEventListener("change", () => refreshInputs());
+  // Rotation sliders bake into the geometry when the drag ends (change fires on release).
+  if (el.dataset.bind.startsWith("rot.")) el.addEventListener("change", () => state.cloud && applyRotation());
 }
 
 $("align-btn").addEventListener("click", alignFloor);
@@ -1597,6 +1652,13 @@ $("file-input").addEventListener("change", (e) => openFile(e.target.files[0]));
 // After every geometry change (load, edit, undo).
 function onGeometryChanged() {
   state.geomVersion++;
+  // A non-rotation edit (crop, lasso, align, undo, new file) sets a new baseline:
+  // drop the rotation reference and zero the sliders so they read "this pose vs. now".
+  // A rotation commit sets state.rotating, which keeps both.
+  if (!state.rotating) {
+    rotRef = null;
+    rot.roll = rot.pitch = rot.yaw = 0;
+  }
   computeBounds();
   updateRanges();
   updateChrome();
