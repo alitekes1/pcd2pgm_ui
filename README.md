@@ -24,7 +24,6 @@ A browser tool that turns a SLAM point cloud into a 2D occupancy map (PGM) for R
 
 ![pcd2pgm_ui start screen](docs/main.png)
 
-![PCD and PGM side by side](docs/pcd-pgm-side-by-side.png)
 
 Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, binary or binary_compressed. Then follow the four steps in the side panel:
 
@@ -35,15 +34,17 @@ Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, 
 | **3. Clean up** | *Find noise* (statistical outlier removal; the points it would remove turn red, then you choose *Remove* or *Cancel*), *Lasso* to erase people, cars and other objects, and *Downsample* (voxel grid). |
 | **4. PGM map** | *Show PGM* opens the side-by-side view. Then download `map.pgm` + `map.yaml`, or the cleaned cloud (PCD / PLY). |
 
-![Opened cloud, floor aligned](docs/cloud-3d.png)
 
 ### Crop
 
 The crop box is shown while something is cut away. Z starts at the full range; when the PGM view is opened for the first time it is set to pcd2pgm's default of 0.1 … 1.5 m above the floor. You can also right-click a point to crop X/Y around it or to use its height as Z min / Z max.
 
+![Opened cloud, floor aligned](docs/cloud-3d.png)
+
 ### PGM view
 
 The PCD pane switches to a top view that stays aligned with the PGM: zooming or panning one pane moves the other, and the cursor is shown in both. Changing any parameter rebuilds the map automatically. Only the radius filter runs in a Web Worker, and its result is cached, so changing just the cell size is instant.
+
 
 The pipeline is the one from [pcd2pgm](https://github.com/LihanChen2004/pcd2pgm), and each setting maps to a key in its config file:
 
@@ -58,26 +59,10 @@ The pipeline is the one from [pcd2pgm](https://github.com/LihanChen2004/pcd2pgm)
 Points removed by the radius filter are drawn in red in the PCD pane; they are not in the map. Every remaining point marks its cell as occupied, and all other cells inside the bounding box are free. The map origin is the minimum x/y of those points. One deliberate difference from pcd2pgm: the grid is sized with `floor + 1` instead of `ceil`, so points lying exactly on the max edge are kept.
 
 ### Export
+![PCD and PGM side by side](docs/pcd-pgm-side-by-side.png)
 
 - **Map**: `map.pgm` + `map.yaml`, the same files `map_saver_cli` writes (trinary, occupied = 0, free = 254). The map is in the current frame, i.e. after floor alignment or the manual transform.
 - **Cloud**: the points inside the crop box, as binary PCD or PLY, in the original file coordinates. RGB and intensity are kept.
-
-## Usage
-
-Open a file, then follow the numbered steps in the side panel. Tools are also on the toolbar (top-left) and in the right-click menu.
-
-| Input | Action |
-| --- | --- |
-| Left drag | Orbit |
-| Middle drag / Shift + left drag / arrow keys | Pan |
-| Wheel | Zoom toward the cursor |
-| Double-click a point / empty space | Focus it / reset view |
-| Right-click | Menu: focus, set Z min / Z max to this height, crop X/Y around a point, reset crop |
-| `M` / `L` / `T` / `P` | Measure / Lasso / Top view / PGM side-by-side view |
-| PGM pane: wheel / drag / double-click | Zoom / pan / fit |
-| `Del` / `Enter` / `Esc` | Lasso: delete / keep selection / cancel |
-| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo (10 steps) |
-| `?` | Help |
 
 
 ## Acknowledgements
