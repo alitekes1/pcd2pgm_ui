@@ -47,6 +47,14 @@ test("RANSAC finds a tilted floor despite a wall; alignment maps normal to +Z", 
   assert.ok(Math.abs(rz[0]) < 1e-9 && Math.abs(rz[1]) < 1e-9 && Math.abs(rz[2] - 1) < 1e-9);
   const det = R[0] * (R[4] * R[8] - R[5] * R[7]) - R[1] * (R[3] * R[8] - R[5] * R[6]) + R[2] * (R[3] * R[7] - R[4] * R[6]);
   assert.ok(Math.abs(det - 1) < 1e-9);
+  assert.ok(r.inliers > 5 * r.beside, `floor stands out: inliers ${r.inliers}, beside ${r.beside}`);
+});
+
+test("RANSAC on walls without a floor: best plane is no denser than the slabs beside it", () => {
+  const pts = [];
+  for (let i = 0; i < 4000; i++) { const t = rng() * 10, z = rng() * 3; pts.push(...(i % 2 ? [t, 0, z] : [0, t, z])); }
+  const r = alg.fitPlaneRansac(new Float32Array(pts), { threshold: 0.05, iterations: 300, maxTiltDeg: 20 });
+  assert.ok(r.inliers < 2 * r.beside, `inliers ${r.inliers}, beside ${r.beside}`);
 });
 
 test("radiusOutlierRemoval matches brute force (PCL: >= k other points within r)", () => {

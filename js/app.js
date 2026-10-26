@@ -9,6 +9,8 @@ import * as alg from "./algorithms.js";
 const $ = (id) => document.getElementById(id);
 const UNDO_LIMIT = 10;
 const MAX_RANSAC_SAMPLE = 200000;
+// "Align to floor" asks first unless the plane has this many times the points of the slab beside it.
+const MIN_FLOOR_CONTRAST = 2;
 const fmtN = (n) => n.toLocaleString("en-US");
 
 // ---------------------------------------------------------------------------
@@ -135,7 +137,16 @@ const uniforms = {
 const sceneEl = $("scene");
 const vpSize = () => [Math.max(1, sceneEl.clientWidth), Math.max(1, sceneEl.clientHeight)];
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch (e) {
+  // Nothing below can run without it, so stop here with a message instead of a dead page.
+  const el = $("welcome-status");
+  el.textContent = "This tool needs WebGL, which this browser has disabled or does not support. Enable hardware acceleration or try another browser.";
+  el.classList.add("error");
+  throw e;
+}
 renderer.setPixelRatio(window.devicePixelRatio);
 sceneEl.prepend(renderer.domElement);
 const dom = renderer.domElement;
@@ -168,6 +179,8 @@ controls.zoomToCursor = true;
 controls.screenSpacePanning = true;
 controls.keyPanSpeed = 20;
 controls.listenToKeyEvents(window);
+// Arrow keys in a field (slider, select, text) belong to the field, not to the camera pan.
+document.addEventListener("keydown", (e) => { if (e.target.closest?.("input, select, textarea, dialog")) e.stopPropagation(); });
 controls.addEventListener("change", kick);
 controls.addEventListener("start", kick);
 dom.addEventListener("wheel", kick, { passive: true });
@@ -250,12 +263,17 @@ worker.onmessage = ({ data }) => {
   if (data.error) job.reject(new Error(data.error));
   else job.resolve(data.result);
 };
+// worker.js catches its own job errors, so this only fires when the worker itself failed
+// (script blocked or offline). It is dead then: fail later jobs at once instead of hanging.
+let workerError = null;
 worker.onerror = (e) => {
-  for (const job of jobs.values()) job.reject(new Error(e.message || "Worker error"));
+  workerError = new Error(`Background worker failed${e.message ? ` (${e.message})` : ""}. Reload the page`);
+  for (const job of jobs.values()) job.reject(workerError);
   jobs.clear();
 };
 function runJob(op, args, transfer = []) {
   return new Promise((resolve, reject) => {
+    if (workerError) return reject(workerError);
     const id = ++jobSeq;
     jobs.set(id, { resolve, reject });
     worker.postMessage({ id, op, args }, transfer);
@@ -310,9 +328,10 @@ function subsetGeometry(g, idx) {
   return out;
 }
 
-// Browsers rewrite characters that are illegal in file names when saving a download, so do it
-// here once: the name in map.yaml's `image:` must be the name the PGM is actually saved under.
-const baseName = () => (state.cloud ? state.cloud.name.replace(/\.[^.]+$/, "").replace(/[\x00-\x1f\x7f"*/:<>?\\|]/g, "_").replace(/^[.\s]+|[.\s]+$/g, "") || "pointcloud" : "pointcloud");
+// Browsers rewrite download names differently (WebKit also replaces spaces and non-ASCII), so
+// keep only characters every browser saves as-is: the name in map.yaml's `image:` must be the
+// name the PGM is actually saved under.
+const baseName = () => (state.cloud ? state.cloud.name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").replace(/^[.]+|[.]+$/g, "") || "pointcloud" : "pointcloud");
 
 function download(content, name, type = "application/octet-stream") {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -617,6 +636,10 @@ const alignFloor = () =>
     const version = state.geomVersion;
     const res = await detectGround();
     assertSameCloud(version);
+    // RANSAC always returns its best plane, even in a cloud with no floor (walls only, clutter).
+    // Real floors measured 3-4x denser than the slab beside them, floorless clouds about 1x.
+    if (res.inliers < MIN_FLOOR_CONTRAST * res.beside && !confirm(`The best plane found (tilted ${res.tiltDeg.toFixed(2)}°) is not much denser than the points just above or below it, so it is probably not a floor (walls only, or clutter). Align to it anyway?`))
+      return status("Floor alignment cancelled: no clear floor found. Use the manual transform instead");
     const R = alg.rotationAlignToZ(res.normal);
     const m = new THREE.Matrix4().set(R[0], R[1], R[2], 0, R[3], R[4], R[5], 0, R[6], R[7], R[8], 0, 0, 0, 0, 1);
     m.premultiply(new THREE.Matrix4().makeTranslation(0, 0, res.d)); // floor plane -> z = 0

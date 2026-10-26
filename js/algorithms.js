@@ -188,7 +188,7 @@ function mulberry32(seed) {
 
 // RANSAC plane fit restricted to planes within maxTiltDeg of the +Z axis
 // (ground / floor), followed by a least-squares refinement on the inliers.
-// Returns { normal:[nx,ny,nz] (nz>=0), d, inliers, total } with n·p + d = 0, or null.
+// Returns { normal:[nx,ny,nz] (nz>=0), d, inliers, beside, total } with n·p + d = 0, or null.
 export function fitPlaneRansac(pos, { threshold = 0.05, iterations = 500, maxTiltDeg = 20, seed = 1 } = {}) {
   const n = pos.length / 3;
   if (n < 3) return null;
@@ -249,7 +249,15 @@ export function fitPlaneRansac(pos, { threshold = 0.05, iterations = 500, maxTil
   if (v[2] < 0) v = v.map((c) => -c);
   if (v[2] < cosMax) v = [bx, by, bz]; // refinement drifted out of the tilt cone; keep RANSAC result
   const d = -(v[0] * cx + v[1] * cy + v[2] * cz);
-  return { normal: v, d, inliers: countInliers(v[0], v[1], v[2], d), total: n };
+  // A floor is far denser than the equally thick slab just above or below it; RANSAC's best
+  // plane through walls or clutter is not (inliers ≈ beside), so callers can tell them apart.
+  let above = 0, below = 0;
+  for (let j = 0; j < pos.length; j += 3) {
+    const s = v[0] * pos[j] + v[1] * pos[j + 1] + v[2] * pos[j + 2] + d;
+    if (s >= threshold && s < 3 * threshold) above++;
+    else if (s <= -threshold && s > -3 * threshold) below++;
+  }
+  return { normal: v, d, inliers: countInliers(v[0], v[1], v[2], d), beside: Math.max(above, below), total: n };
 }
 
 // Row-major 3x3 rotation taking unit vector n onto +Z (Rodrigues).
