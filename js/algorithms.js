@@ -400,6 +400,14 @@ export function parseNumberField(text, min = -Infinity, max = Infinity, final = 
   return v;
 }
 
+// One step up (dir = 1) or down (dir = -1) from v on the grid of `step`, clamped to [min, max]:
+// what a number input's spinner does. Rounded to the step's decimals so 0.1 + 0.1 shows 0.2.
+export function stepNumber(v, step, dir, min = -Infinity, max = Infinity) {
+  const decimals = (String(step).split(".")[1] || "").length;
+  const next = +((Math.round(v / step) + dir) * step).toFixed(decimals);
+  return Math.min(max, Math.max(min, next));
+}
+
 // ---------------------------------------------------------------------------
 // Encoders. data = { positions: Float32Array(3n), colors: Uint8Array(3n) sRGB | null,
 //                    intensity: Float32Array(n) | null }

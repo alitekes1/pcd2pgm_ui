@@ -119,6 +119,19 @@ test("parseNumberField accepts , and . and only clamps once the field is left", 
   assert.equal(p("abc", 0.01, 1, true), null); // invalid text never becomes a value
 });
 
+test("stepNumber moves one step on the step grid, like a number input's spinner", () => {
+  const s = alg.stepNumber;
+  assert.equal(s(0.05, 0.01, 1), 0.06);
+  assert.equal(s(0.05, 0.01, -1), 0.04);
+  assert.equal(s(0.123, 0.01, 1), 0.13); // off-grid value snaps to the grid
+  assert.equal(s(0.123, 0.01, -1), 0.11);
+  assert.equal(s(0.1, 0.1, 1), 0.2); // no 0.30000000000000004
+  assert.equal(s(-19.96, 0.1, 1), -19.9);
+  assert.equal(s(0.01, 0.01, -1, 0.01, 1), 0.01); // clamped to min / max
+  assert.equal(s(1, 0.01, 1, 0.01, 1), 1);
+  assert.equal(s(179, 1, 1, -180, 180), 180);
+});
+
 test("selectInMask projects with identity view-projection", () => {
   const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const mask = new Uint8Array(4 * 4); mask[0] = 1; // top-left pixel

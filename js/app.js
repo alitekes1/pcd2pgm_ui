@@ -1693,6 +1693,24 @@ for (const el of boundInputs) {
   if (el.dataset.bind.startsWith("rot.")) el.addEventListener("change", () => state.cloud && applyRotation());
 }
 
+// Mouse wheel over a focused number field steps its value (text inputs have no native
+// spinner). Only when focused, so scrolling the panel past a field never changes it.
+// Each notch applies live; the "change" (clamp, normalize, bake rotation) follows once
+// the wheel has been still for a moment, so a rotation is one undo step, not one per notch.
+for (const el of boundInputs.filter(isNumberField)) {
+  let settle;
+  el.addEventListener("wheel", (e) => {
+    if (el !== document.activeElement || !state.cloud || !e.deltaY) return;
+    e.preventDefault();
+    const [obj, k] = bindTarget(el);
+    const cur = alg.parseNumberField(el.value) ?? obj[k];
+    el.value = alg.stepNumber(cur, +el.step || 1, e.deltaY < 0 ? 1 : -1, el.min !== "" ? +el.min : -Infinity, el.max !== "" ? +el.max : Infinity);
+    el.dispatchEvent(new Event("input"));
+    clearTimeout(settle);
+    settle = setTimeout(() => el.dispatchEvent(new Event("change")), 400);
+  }, { passive: false });
+}
+
 $("align-btn").addEventListener("click", alignFloor);
 $("sor-btn").addEventListener("click", findNoise);
 $("lasso-btn").addEventListener("click", () => toggleMode("lasso"));
@@ -1717,6 +1735,7 @@ function onGeometryChanged() {
   if (!state.rotating) {
     rotRef = null;
     rot.roll = rot.pitch = rot.yaw = 0;
+    refreshInputs();
   }
   computeBounds();
   updateRanges();
