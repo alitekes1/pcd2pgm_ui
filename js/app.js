@@ -9,6 +9,8 @@ import * as alg from "./algorithms.js";
 const $ = (id) => document.getElementById(id);
 const UNDO_LIMIT = 10;
 const MAX_RANSAC_SAMPLE = 200000;
+// "Align to floor" asks first unless the plane has this many times the points of the slab beside it.
+const MIN_FLOOR_CONTRAST = 2;
 const fmtN = (n) => n.toLocaleString("en-US");
 
 // ---------------------------------------------------------------------------
@@ -110,6 +112,7 @@ const state = {
   rotating: false, // true only during a rotation commit, so onGeometryChanged keeps the sliders
 };
 const band = { min: 0.1, max: 1.5 }; // pcd2pgm thre_z_min / thre_z_max (view-frame z)
+let zAuto = true; // Z not chosen by the user yet, see mapDefaultZ()
 const crop = { xmin: -10, xmax: 10, ymin: -10, ymax: 10 }; // crop box X/Y (Z is `band`), always applied
 const view = { pointSize: 1.0, colorMode: "height", colormap: "turbo", rangeMin: 0, rangeMax: 1, topView: false };
 const ops = { voxel: 0.05, sorK: 8, sorStd: 1.0, groundThreshold: 0.05, groundTilt: 20, mapResolution: 0.05, invert: false, radius: 0.1, minNeighbors: 10, cloudFormat: "pcd" };
@@ -134,7 +137,16 @@ const uniforms = {
 const sceneEl = $("scene");
 const vpSize = () => [Math.max(1, sceneEl.clientWidth), Math.max(1, sceneEl.clientHeight)];
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch (e) {
+  // Nothing below can run without it, so stop here with a message instead of a dead page.
+  const el = $("welcome-status");
+  el.textContent = "This tool needs WebGL, which this browser has disabled or does not support. Enable hardware acceleration or try another browser.";
+  el.classList.add("error");
+  throw e;
+}
 renderer.setPixelRatio(window.devicePixelRatio);
 sceneEl.prepend(renderer.domElement);
 const dom = renderer.domElement;
@@ -167,6 +179,8 @@ controls.zoomToCursor = true;
 controls.screenSpacePanning = true;
 controls.keyPanSpeed = 20;
 controls.listenToKeyEvents(window);
+// Arrow keys in a field (slider, select, text) belong to the field, not to the camera pan.
+document.addEventListener("keydown", (e) => { if (e.target.closest?.("input, select, textarea, dialog")) e.stopPropagation(); });
 controls.addEventListener("change", kick);
 controls.addEventListener("start", kick);
 dom.addEventListener("wheel", kick, { passive: true });
@@ -249,12 +263,17 @@ worker.onmessage = ({ data }) => {
   if (data.error) job.reject(new Error(data.error));
   else job.resolve(data.result);
 };
+// worker.js catches its own job errors, so this only fires when the worker itself failed
+// (script blocked or offline). It is dead then: fail later jobs at once instead of hanging.
+let workerError = null;
 worker.onerror = (e) => {
-  for (const job of jobs.values()) job.reject(new Error(e.message || "Worker error"));
+  workerError = new Error(`Background worker failed${e.message ? ` (${e.message})` : ""}. Reload the page`);
+  for (const job of jobs.values()) job.reject(workerError);
   jobs.clear();
 };
 function runJob(op, args, transfer = []) {
   return new Promise((resolve, reject) => {
+    if (workerError) return reject(workerError);
     const id = ++jobSeq;
     jobs.set(id, { resolve, reject });
     worker.postMessage({ id, op, args }, transfer);
@@ -309,7 +328,10 @@ function subsetGeometry(g, idx) {
   return out;
 }
 
-const baseName = () => (state.cloud ? state.cloud.name.replace(/\.[^.]+$/, "") : "pointcloud");
+// Browsers rewrite download names differently (WebKit also replaces spaces and non-ASCII), so
+// keep only characters every browser saves as-is: the name in map.yaml's `image:` must be the
+// name the PGM is actually saved under.
+const baseName = () => (state.cloud ? state.cloud.name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").replace(/^[.]+|[.]+$/g, "") || "pointcloud" : "pointcloud");
 
 function download(content, name, type = "application/octet-stream") {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -371,6 +393,10 @@ async function parseFile(file) {
     xyz: async () => xyzLoader.parse(await file.text()),
   }[ext === "txt" ? "xyz" : ext];
   if (!parse) throw new Error(`unsupported file type ".${ext}" (use .pcd, .ply or .xyz)`);
+  if (ext === "pcd") {
+    const bad = alg.pcdPositionError(await file.slice(0, 65536).text()); // the header is plain text
+    if (bad) throw new Error(bad);
+  }
   try {
     return await parse();
   } catch (e) {
@@ -410,7 +436,12 @@ function openFile(file) {
       const { geometry, dropped } = normalizeGeometry(await parseFile(file));
       closeCloud();
       setCloud(file.name, geometry);
-      status(`Opened ${file.name}: ${fmtN(geometry.attributes.position.count)} points${dropped ? ` (${fmtN(dropped)} invalid points skipped)` : ""}`);
+      const opened = `Opened ${file.name}: ${fmtN(geometry.attributes.position.count)} points${dropped ? ` (${fmtN(dropped)} invalid points skipped)` : ""}`;
+      // Positions are 32-bit floats: far from the origin (UTM, GPS) they cannot hold cm detail.
+      const far = Math.max(...[...state.bounds.min, ...state.bounds.max].map(Math.abs));
+      const step = far > 0 ? 2 ** (Math.floor(Math.log2(far)) - 23) : 0; // float32 spacing at that distance
+      if (step >= 0.01) status(`${opened}. Warning: coordinates reach ${fmtN(Math.round(far))} m from the origin, where 32-bit floats only resolve ${+(step * 100).toPrecision(2)} cm. Shift the cloud to a local origin first`, { error: true });
+      else status(opened);
     } finally {
       $("file-input").value = "";
     }
@@ -511,9 +542,10 @@ function commit(geometry, label, frame = null) {
 }
 
 function step(from, to, word) {
+  if (state.busy) return status("Please wait, another operation is still running…");
   cancelPending();
   const s = from.pop();
-  if (!s) return status(`Nothing to ${word.toLowerCase()}`);
+  if (!s) return status(`Nothing to ${word === "Undone" ? "undo" : "redo"}`);
   to.push(snapshot());
   const moved = !s.matrix.equals(state.matrix);
   swapGeometry(s.geometry);
@@ -601,7 +633,13 @@ async function detectGround() {
 
 const alignFloor = () =>
   busy("Finding the floor", async () => {
+    const version = state.geomVersion;
     const res = await detectGround();
+    assertSameCloud(version);
+    // RANSAC always returns its best plane, even in a cloud with no floor (walls only, clutter).
+    // Real floors measured 3-4x denser than the slab beside them, floorless clouds about 1x.
+    if (res.inliers < MIN_FLOOR_CONTRAST * res.beside && !confirm(`The best plane found (tilted ${res.tiltDeg.toFixed(2)}°) is not much denser than the points just above or below it, so it is probably not a floor (walls only, or clutter). Align to it anyway?`))
+      return status("Floor alignment cancelled: no clear floor found. Use the manual transform instead");
     const R = alg.rotationAlignToZ(res.normal);
     const m = new THREE.Matrix4().set(R[0], R[1], R[2], 0, R[3], R[4], R[5], 0, R[6], R[7], R[8], 0, 0, 0, 0, 1);
     m.premultiply(new THREE.Matrix4().makeTranslation(0, 0, res.d)); // floor plane -> z = 0
@@ -679,11 +717,18 @@ function applyRotation() {
 
 // ---------------------------------------------------------------------------
 // Step 2: cleanup (acts on shown points only; hidden points are left untouched)
+// A worker result is a list of indices into the geometry it was computed on. If the cloud
+// changed meanwhile (lasso Del, rotation slider, …), applying it would remove the wrong points.
+function assertSameCloud(version) {
+  if (state.geomVersion !== version) throw new Error("the cloud changed while it ran, please run it again");
+}
 async function workerKeep(op, args) {
   const vis = visibleIndices();
   if (!vis.length) throw new Error("no points shown");
+  const version = state.geomVersion;
   const sub = gatherPositions(positions(), vis);
   const kept = await runJob(op, [sub, ...args], [sub.buffer]);
+  assertSameCloud(version);
   const keep = new Uint8Array(positions().length / 3).fill(1);
   for (const v of vis) keep[v] = 0;
   for (const k of kept) keep[vis[k]] = 1;
@@ -820,11 +865,7 @@ function setMapView(on) {
   if (on) {
     topBeforeMap = view.topView;
     fitTopView(); // layout already reflects the opened pane
-    if (zIsFull() && !ops.invert) {
-      defaultZ();
-      onCropChanged();
-      status(`Z set to ${band.min} … ${band.max} m (pcd2pgm default). Adjust it in Crop`);
-    }
+    mapDefaultZ();
   } else if (!topBeforeMap) setTopView(false);
   $("pane-tag-pcd").hidden = !on;
   $("map-view-btn").textContent = on ? "Hide PGM" : "Show PGM";
@@ -969,12 +1010,13 @@ new ResizeObserver(() => (pgmView.fitted ? drawPgm() : fitPgm())).observe(pgmCan
 // the cloud goes back to the original file coordinates.
 async function exportMap() {
   try {
+    mapDefaultZ(); // same Z as the PGM view would use, even if it was never opened
     const g = await computeMap();
     if (!g) throw new Error("the cloud changed, try again");
     const name = `${baseName()}_map`;
     download(alg.encodePGM(g), `${name}.pgm`, "image/x-portable-graymap");
     download(alg.encodeMapYaml(g, `${name}.pgm`), `${name}.yaml`, "text/yaml");
-    status(`Saved ${name}.pgm and ${name}.yaml (${g.width} × ${g.height} @ ${ops.mapResolution} m)`);
+    status(`Saved ${name}.pgm and ${name}.yaml (${g.width} × ${g.height} @ ${ops.mapResolution} m, Z ${ops.invert ? "outside " : ""}${band.min} … ${band.max} m)`);
   } catch (e) {
     status(`Map export failed: ${e.message}`, { error: true });
   }
@@ -1109,9 +1151,21 @@ function defaultZ() {
 
 // Z after load / alignment: everything in 3D, pcd2pgm's default in the PGM view.
 function resetBand() {
+  zAuto = !state.mapView;
   if (state.mapView) defaultZ();
   else [band.min, band.max] = [floor2(state.bounds.min[2]), ceil2(state.bounds.max[2])];
   onCropChanged();
+}
+
+// True while Z is still the automatic full range from load / alignment / Reset. The first map
+// that is needed (PGM view or download) then switches it to pcd2pgm's default, so the preview
+// and the downloaded map always use the same Z. Any Z or "outside" change by the user clears it.
+function mapDefaultZ() {
+  if (!zAuto || ops.invert) return;
+  zAuto = false;
+  defaultZ();
+  onCropChanged();
+  status(`Z set to ${band.min} … ${band.max} m (pcd2pgm default). Adjust it in Crop`);
 }
 
 function resetCropXY() {
@@ -1123,6 +1177,7 @@ function resetCrop() {
   resetCropXY();
   [band.min, band.max] = [floor2(state.bounds.min[2]), ceil2(state.bounds.max[2])];
   ops.invert = false;
+  zAuto = !state.mapView; // in the PGM view the full Z is what the user now sees and gets
   onCropChanged();
 }
 
@@ -1553,6 +1608,8 @@ dom.addEventListener("wheel", hideMenu, { passive: true });
 // ---------------------------------------------------------------------------
 // Panel: inputs with data-bind="group.key" are two-way bound to the model objects.
 const boundInputs = [...document.querySelectorAll("[data-bind]")];
+// Numeric fields are text inputs (see alg.parseNumberField), the only bound inputs of type text.
+const isNumberField = (el) => el.type === "text";
 const bindTarget = (el) => {
   const [g, k] = el.dataset.bind.split(".");
   return [model[g], k, g];
@@ -1560,7 +1617,7 @@ const bindTarget = (el) => {
 
 function refreshInputs(except = null) {
   for (const el of boundInputs) {
-    if (el === except || (el === document.activeElement && el.type === "number")) continue;
+    if (el === except || (el === document.activeElement && isNumberField(el))) continue;
     const [obj, k] = bindTarget(el);
     if (el.type === "checkbox") el.checked = obj[k];
     else if (typeof obj[k] === "number") el.value = +obj[k].toFixed(3);
@@ -1593,6 +1650,7 @@ function updateRanges() {
 }
 
 function onModelChange(group, key) {
+  if (group === "band" || key === "invert") zAuto = false; // the user picked Z: keep it
   if (group === "band" && band.min > band.max) {
     if (key === "min") band.max = band.min;
     else band.min = band.max;
@@ -1613,25 +1671,44 @@ function onModelChange(group, key) {
 }
 
 for (const el of boundInputs) {
-  el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => {
+  const apply = (final) => {
     if (!state.cloud) return;
     const [obj, k, g] = bindTarget(el);
     let v;
     if (el.type === "checkbox") v = el.checked;
-    else if (el.type === "number" || el.type === "range") {
-      v = parseFloat(el.value);
-      if (!Number.isFinite(v)) return; // half-typed value, wait for more input
-      if (el.min !== "" && el.type === "number" && g === "ops") v = Math.max(+el.min, v);
-      if (el.max !== "" && el.type === "number" && g === "ops") v = Math.min(+el.max, v);
+    else if (el.type === "range") v = parseFloat(el.value);
+    else if (isNumberField(el)) {
+      const limited = g === "ops"; // only the cleanup / map settings have hard limits
+      v = alg.parseNumberField(el.value, limited && el.min !== "" ? +el.min : -Infinity, limited && el.max !== "" ? +el.max : Infinity, final);
+      if (v === null) return; // half-typed or invalid: keep the current value
     } else v = el.value;
     obj[k] = v;
     onModelChange(g, k);
     refreshInputs(el);
-  });
-  // Show the clamped / normalized value once the user leaves a number field.
-  if (el.type === "number") el.addEventListener("change", () => refreshInputs());
+  };
+  el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => apply(false));
+  // Leaving a number field applies the clamped value and shows the normalized one.
+  if (isNumberField(el)) el.addEventListener("change", () => { apply(true); refreshInputs(); });
   // Rotation sliders bake into the geometry when the drag ends (change fires on release).
   if (el.dataset.bind.startsWith("rot.")) el.addEventListener("change", () => state.cloud && applyRotation());
+}
+
+// Mouse wheel over a focused number field steps its value (text inputs have no native
+// spinner). Only when focused, so scrolling the panel past a field never changes it.
+// Each notch applies live; the "change" (clamp, normalize, bake rotation) follows once
+// the wheel has been still for a moment, so a rotation is one undo step, not one per notch.
+for (const el of boundInputs.filter(isNumberField)) {
+  let settle;
+  el.addEventListener("wheel", (e) => {
+    if (el !== document.activeElement || !state.cloud || !e.deltaY) return;
+    e.preventDefault();
+    const [obj, k] = bindTarget(el);
+    const cur = alg.parseNumberField(el.value) ?? obj[k];
+    el.value = alg.stepNumber(cur, +el.step || 1, e.deltaY < 0 ? 1 : -1, el.min !== "" ? +el.min : -Infinity, el.max !== "" ? +el.max : Infinity);
+    el.dispatchEvent(new Event("input"));
+    clearTimeout(settle);
+    settle = setTimeout(() => el.dispatchEvent(new Event("change")), 400);
+  }, { passive: false });
 }
 
 $("align-btn").addEventListener("click", alignFloor);
@@ -1658,6 +1735,7 @@ function onGeometryChanged() {
   if (!state.rotating) {
     rotRef = null;
     rot.roll = rot.pitch = rot.yaw = 0;
+    refreshInputs();
   }
   computeBounds();
   updateRanges();

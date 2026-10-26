@@ -1,0 +1,34 @@
+[
+ {
+  "id": "LIVE-01",
+  "area": "F",
+  "title": "Canlı site: doğrudan indirme = önizleme sonrası indirme",
+  "expected": "Aynı PGM",
+  "actual": "{\"direct\":[658,899,\"41cbc1a4669c4335\"],\"preview\":[546,896,\"bf7d426314f252a7\"]}",
+  "status": "FAIL"
+ },
+ {
+  "id": "LIVE-02",
+  "area": "F",
+  "title": "Canlı site: '#' ve ':' içeren dosya adı",
+  "expected": "YAML image = kaydedilen PGM adı",
+  "actual": "{\"saved\":[\"cloud # cropped_ yes_map.pgm\",\"cloud # cropped_ yes_map.yaml\"],\"yamlLine\":\"image: cloud # cropped: yes_map.pgm\"}",
+  "status": "FAIL"
+ },
+ {
+  "id": "LIVE-03",
+  "area": "A",
+  "title": "Canlı site: float64 binary PCD",
+  "expected": "Açık hata",
+  "actual": "status-msg: Opened f64_binary.pcd: 2 points",
+  "status": "FAIL"
+ },
+ {
+  "id": "LIVE-04",
+  "area": "G",
+  "title": "Canlı site: başlangıçta 4xx kaynak",
+  "expected": "Yok",
+  "actual": "[]",
+  "status": "PASS"
+ }
+]

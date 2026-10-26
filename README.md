@@ -29,7 +29,7 @@ Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, 
 
 | Step | What it does |
 | --- | --- |
-| **1. Level the floor** | RANSAC finds the floor among the lowest points and rotates the cloud so the floor lies at z = 0. *Advanced* lets you change the floor tolerance and max tilt, or apply pcd2pgm's `odom_to_lidar_odom` `[x, y, z, roll, pitch, yaw]` by hand (the cloud is moved by its inverse). |
+| **1. Level the floor** | RANSAC finds the floor among the lowest points and rotates the cloud so the floor lies at z = 0. If the plane it finds is no denser than the points just above it (walls only, no floor), it asks before using it. *Advanced* lets you change the floor tolerance and max tilt, or apply pcd2pgm's `odom_to_lidar_odom` `[x, y, z, roll, pitch, yaw]` by hand (the cloud is moved by its inverse). |
 | **2. Crop** | One two-thumb slider per X / Y / Z axis, applied **live** in the 3D view. Only the points inside the box are shown, cleaned and put into the map. Z is pcd2pgm's obstacle height range. |
 | **3. Clean up** | *Find noise* (statistical outlier removal; the points it would remove turn red, then you choose *Remove* or *Cancel*), *Lasso* to erase people, cars and other objects, and *Downsample* (voxel grid). |
 | **4. PGM map** | *Show PGM* opens the side-by-side view. Then download `map.pgm` + `map.yaml`, or the cleaned cloud (PCD / PLY). |
@@ -37,7 +37,7 @@ Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, 
 
 ### Crop
 
-The crop box is shown while something is cut away. Z starts at the full range; when the PGM view is opened for the first time it is set to pcd2pgm's default of 0.1 … 1.5 m above the floor. You can also right-click a point to crop X/Y around it or to use its height as Z min / Z max.
+The crop box is shown while something is cut away. Z starts at the full range; the first time a map is needed (opening the PGM view or downloading the map) it is set to pcd2pgm's default of 0.1 … 1.5 m above the floor, unless you set Z yourself. So the preview and the download always use the same Z. You can also right-click a point to crop X/Y around it or to use its height as Z min / Z max.
 
 ![Opened cloud, floor aligned](docs/cloud-3d.png)
 
@@ -61,7 +61,7 @@ Points removed by the radius filter are drawn in red in the PCD pane; they are n
 ### Export
 ![PCD and PGM side by side](docs/pcd-pgm-side-by-side.png)
 
-- **Map**: `map.pgm` + `map.yaml`, the same files `map_saver_cli` writes (trinary, occupied = 0, free = 254). The map is in the current frame, i.e. after floor alignment or the manual transform.
+- **Map**: `map.pgm` + `map.yaml` (named after the cloud, with anything but ASCII letters, digits, `.`, `-` and `_` replaced by `_` so every browser saves the name the YAML refers to), the same files `map_saver_cli` writes (trinary, occupied = 0, free = 254). The map is in the current frame, i.e. after floor alignment or the manual transform.
 - **Cloud**: the points inside the crop box, as binary PCD or PLY, in the original file coordinates. RGB and intensity are kept.
 
 

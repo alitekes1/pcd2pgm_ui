@@ -47,6 +47,14 @@ test("RANSAC finds a tilted floor despite a wall; alignment maps normal to +Z", 
   assert.ok(Math.abs(rz[0]) < 1e-9 && Math.abs(rz[1]) < 1e-9 && Math.abs(rz[2] - 1) < 1e-9);
   const det = R[0] * (R[4] * R[8] - R[5] * R[7]) - R[1] * (R[3] * R[8] - R[5] * R[6]) + R[2] * (R[3] * R[7] - R[4] * R[6]);
   assert.ok(Math.abs(det - 1) < 1e-9);
+  assert.ok(r.inliers > 5 * r.beside, `floor stands out: inliers ${r.inliers}, beside ${r.beside}`);
+});
+
+test("RANSAC on walls without a floor: best plane is no denser than the slabs beside it", () => {
+  const pts = [];
+  for (let i = 0; i < 4000; i++) { const t = rng() * 10, z = rng() * 3; pts.push(...(i % 2 ? [t, 0, z] : [0, t, z])); }
+  const r = alg.fitPlaneRansac(new Float32Array(pts), { threshold: 0.05, iterations: 300, maxTiltDeg: 20 });
+  assert.ok(r.inliers < 2 * r.beside, `inliers ${r.inliers}, beside ${r.beside}`);
 });
 
 test("radiusOutlierRemoval matches brute force (PCL: >= k other points within r)", () => {
@@ -76,6 +84,52 @@ test("pcd2pgmGrid: origin at min x/y, free everywhere except hit cells, top row 
   assert.ok(alg.encodeMapYaml(g, "m.pgm").includes("mode: trinary"));
   const pgm = alg.encodePGM(g);
   assert.equal(pgm.length - g.data.length, new TextDecoder().decode(pgm).indexOf("255\n") + 4);
+});
+
+test("encodeMapYaml quotes the image name so YAML-special file names survive", () => {
+  const g = { resolution: 0.05, origin: [1, 2, 0] };
+  for (const name of ["m.pgm", "cloud # cropped: yes_map.pgm", ' a "b" \\ ü.pgm']) {
+    const line = alg.encodeMapYaml(g, name).split("\n")[0];
+    assert.ok(line.startsWith('image: "'), line);
+    assert.equal(JSON.parse(line.slice("image: ".length)), name); // JSON strings are YAML double-quoted scalars
+  }
+});
+
+test("pcdPositionError rejects binary x/y/z that PCDLoader would misread as float32", () => {
+  const head = (data, size = "4 4 4", type = "F F F") =>
+    `# .PCD v0.7\nVERSION 0.7\nFIELDS x y z\nSIZE ${size}\nTYPE ${type}\nCOUNT 1 1 1\nWIDTH 1\nHEIGHT 1\nPOINTS 1\nDATA ${data}\n`;
+  assert.equal(alg.pcdPositionError(head("binary")), null);
+  assert.equal(alg.pcdPositionError(head("binary_compressed")), null);
+  assert.equal(alg.pcdPositionError(head("ascii", "8 8 8")), null); // text is parsed as text
+  assert.match(alg.pcdPositionError(head("binary", "8 8 8")), /x\/y\/z.*F8/);
+  assert.match(alg.pcdPositionError(head("binary_compressed", "4 4 4", "F F I")), /z.*I4/);
+});
+
+test("parseNumberField accepts , and . and only clamps once the field is left", () => {
+  const p = alg.parseNumberField;
+  assert.equal(p("0,05", 0.01, 1), 0.05);
+  assert.equal(p(" 0.07 ", 0.01, 1), 0.07);
+  assert.equal(p("1e-1", 0.01, 1), 0.1);
+  assert.equal(p("-1,5"), -1.5);
+  for (const half of ["", "-", "0,", "abc", "0.05abc", "Infinity"]) assert.equal(p(half, 0.01, 1), null, half);
+  assert.equal(p("0", 0.01, 1), null); // "0" on the way to "0.05": not applied yet
+  assert.equal(p("5", 0.01, 1), null);
+  assert.equal(p("0", 0.01, 1, true), 0.01); // field left: clamped
+  assert.equal(p("5", 0.01, 1, true), 1);
+  assert.equal(p("abc", 0.01, 1, true), null); // invalid text never becomes a value
+});
+
+test("stepNumber moves one step on the step grid, like a number input's spinner", () => {
+  const s = alg.stepNumber;
+  assert.equal(s(0.05, 0.01, 1), 0.06);
+  assert.equal(s(0.05, 0.01, -1), 0.04);
+  assert.equal(s(0.123, 0.01, 1), 0.13); // off-grid value snaps to the grid
+  assert.equal(s(0.123, 0.01, -1), 0.11);
+  assert.equal(s(0.1, 0.1, 1), 0.2); // no 0.30000000000000004
+  assert.equal(s(-19.96, 0.1, 1), -19.9);
+  assert.equal(s(0.01, 0.01, -1, 0.01, 1), 0.01); // clamped to min / max
+  assert.equal(s(1, 0.01, 1, 0.01, 1), 1);
+  assert.equal(s(179, 1, 1, -180, 180), 180);
 });
 
 test("selectInMask projects with identity view-projection", () => {

@@ -81,7 +81,7 @@ kbd {
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-input[type="number"],
+input.num-input,
 select {
   width: 100%;
   padding: 5px 8px;
@@ -587,7 +587,7 @@ body.dragging #drop-hint { display: grid; }
 /* Two-thumb range: two stacked range inputs, only the thumbs take the pointer. */
 .dual { display: grid; grid-template-columns: 14px 64px 1fr 64px; align-items: center; gap: 6px; margin: 6px 0; }
 .dual .ax { font-weight: 600; color: var(--muted); }
-.dual input[type="number"] { padding: 4px 6px; font-size: 12.5px; }
+.dual input.num-input { padding: 4px 6px; font-size: 12.5px; }
 .dual-track { position: relative; height: 22px; --lo: 0%; --hi: 100%; }
 .dual-track::before,
 .dual-track::after { content: ""; position: absolute; top: 9px; height: 4px; border-radius: 2px; }
