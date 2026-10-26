@@ -78,6 +78,25 @@ test("pcd2pgmGrid: origin at min x/y, free everywhere except hit cells, top row 
   assert.equal(pgm.length - g.data.length, new TextDecoder().decode(pgm).indexOf("255\n") + 4);
 });
 
+test("encodeMapYaml quotes the image name so YAML-special file names survive", () => {
+  const g = { resolution: 0.05, origin: [1, 2, 0] };
+  for (const name of ["m.pgm", "cloud # cropped: yes_map.pgm", ' a "b" \\ ü.pgm']) {
+    const line = alg.encodeMapYaml(g, name).split("\n")[0];
+    assert.ok(line.startsWith('image: "'), line);
+    assert.equal(JSON.parse(line.slice("image: ".length)), name); // JSON strings are YAML double-quoted scalars
+  }
+});
+
+test("pcdPositionError rejects binary x/y/z that PCDLoader would misread as float32", () => {
+  const head = (data, size = "4 4 4", type = "F F F") =>
+    `# .PCD v0.7\nVERSION 0.7\nFIELDS x y z\nSIZE ${size}\nTYPE ${type}\nCOUNT 1 1 1\nWIDTH 1\nHEIGHT 1\nPOINTS 1\nDATA ${data}\n`;
+  assert.equal(alg.pcdPositionError(head("binary")), null);
+  assert.equal(alg.pcdPositionError(head("binary_compressed")), null);
+  assert.equal(alg.pcdPositionError(head("ascii", "8 8 8")), null); // text is parsed as text
+  assert.match(alg.pcdPositionError(head("binary", "8 8 8")), /x\/y\/z.*F8/);
+  assert.match(alg.pcdPositionError(head("binary_compressed", "4 4 4", "F F I")), /z.*I4/);
+});
+
 test("selectInMask projects with identity view-projection", () => {
   const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const mask = new Uint8Array(4 * 4); mask[0] = 1; // top-left pixel

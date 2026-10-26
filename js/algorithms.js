@@ -348,7 +348,7 @@ export function encodePGM(grid) {
 export function encodeMapYaml(grid, imageName) {
   const f = (v) => String(+v.toFixed(6));
   return [
-    `image: ${imageName}`,
+    `image: ${JSON.stringify(imageName)}`, // a JSON string is a valid YAML double-quoted scalar ("#", ": " stay literal)
     "mode: trinary",
     `resolution: ${f(grid.resolution)}`,
     `origin: [${f(grid.origin[0])}, ${f(grid.origin[1])}, 0.0]`,
@@ -357,6 +357,26 @@ export function encodeMapYaml(grid, imageName) {
     "free_thresh: 0.196",
     "",
   ].join("\n");
+}
+
+// three's PCDLoader (r166) reads binary / binary_compressed x, y, z with getFloat32 whatever
+// SIZE / TYPE say, so double or integer positions would load as silent garbage. ASCII is parsed
+// as text and is fine. Returns an error message, or null when the positions are readable.
+// ponytail: rejects float64 binary PCDs instead of decoding them; add an own reader to support them.
+export function pcdPositionError(header) {
+  const kv = {};
+  for (const line of header.split(/\r?\n/)) {
+    const [key, ...vals] = line.replace(/#.*/, "").trim().split(/\s+/);
+    if (key) kv[key.toUpperCase()] = vals;
+    if (key.toUpperCase() === "DATA") break;
+  }
+  if (!kv.DATA || !kv.FIELDS || kv.DATA[0].toLowerCase() === "ascii") return null;
+  const bad = ["x", "y", "z"].flatMap((a) => {
+    const i = kv.FIELDS.indexOf(a);
+    const t = `${kv.TYPE?.[i]?.toUpperCase()}${kv.SIZE?.[i]}`;
+    return i < 0 || t === "F4" ? [] : [`${a} ${t}`];
+  });
+  return bad.length ? `x/y/z must be 32-bit floats (TYPE F, SIZE 4) in a binary PCD, found ${bad.join(", ")}. Save it as float32 or DATA ascii` : null;
 }
 
 // ---------------------------------------------------------------------------

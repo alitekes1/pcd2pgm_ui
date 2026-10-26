@@ -110,6 +110,7 @@ const state = {
   rotating: false, // true only during a rotation commit, so onGeometryChanged keeps the sliders
 };
 const band = { min: 0.1, max: 1.5 }; // pcd2pgm thre_z_min / thre_z_max (view-frame z)
+let zAuto = true; // Z not chosen by the user yet, see mapDefaultZ()
 const crop = { xmin: -10, xmax: 10, ymin: -10, ymax: 10 }; // crop box X/Y (Z is `band`), always applied
 const view = { pointSize: 1.0, colorMode: "height", colormap: "turbo", rangeMin: 0, rangeMax: 1, topView: false };
 const ops = { voxel: 0.05, sorK: 8, sorStd: 1.0, groundThreshold: 0.05, groundTilt: 20, mapResolution: 0.05, invert: false, radius: 0.1, minNeighbors: 10, cloudFormat: "pcd" };
@@ -309,7 +310,9 @@ function subsetGeometry(g, idx) {
   return out;
 }
 
-const baseName = () => (state.cloud ? state.cloud.name.replace(/\.[^.]+$/, "") : "pointcloud");
+// Browsers rewrite characters that are illegal in file names when saving a download, so do it
+// here once: the name in map.yaml's `image:` must be the name the PGM is actually saved under.
+const baseName = () => (state.cloud ? state.cloud.name.replace(/\.[^.]+$/, "").replace(/[\x00-\x1f\x7f"*/:<>?\\|]/g, "_").replace(/^[.\s]+|[.\s]+$/g, "") || "pointcloud" : "pointcloud");
 
 function download(content, name, type = "application/octet-stream") {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -371,6 +374,10 @@ async function parseFile(file) {
     xyz: async () => xyzLoader.parse(await file.text()),
   }[ext === "txt" ? "xyz" : ext];
   if (!parse) throw new Error(`unsupported file type ".${ext}" (use .pcd, .ply or .xyz)`);
+  if (ext === "pcd") {
+    const bad = alg.pcdPositionError(await file.slice(0, 65536).text()); // the header is plain text
+    if (bad) throw new Error(bad);
+  }
   try {
     return await parse();
   } catch (e) {
@@ -410,7 +417,12 @@ function openFile(file) {
       const { geometry, dropped } = normalizeGeometry(await parseFile(file));
       closeCloud();
       setCloud(file.name, geometry);
-      status(`Opened ${file.name}: ${fmtN(geometry.attributes.position.count)} points${dropped ? ` (${fmtN(dropped)} invalid points skipped)` : ""}`);
+      const opened = `Opened ${file.name}: ${fmtN(geometry.attributes.position.count)} points${dropped ? ` (${fmtN(dropped)} invalid points skipped)` : ""}`;
+      // Positions are 32-bit floats: far from the origin (UTM, GPS) they cannot hold cm detail.
+      const far = Math.max(...[...state.bounds.min, ...state.bounds.max].map(Math.abs));
+      const step = far > 0 ? 2 ** (Math.floor(Math.log2(far)) - 23) : 0; // float32 spacing at that distance
+      if (step >= 0.01) status(`${opened}. Warning: coordinates reach ${fmtN(Math.round(far))} m from the origin, where 32-bit floats only resolve ${+(step * 100).toPrecision(2)} cm. Shift the cloud to a local origin first`, { error: true });
+      else status(opened);
     } finally {
       $("file-input").value = "";
     }
@@ -820,11 +832,7 @@ function setMapView(on) {
   if (on) {
     topBeforeMap = view.topView;
     fitTopView(); // layout already reflects the opened pane
-    if (zIsFull() && !ops.invert) {
-      defaultZ();
-      onCropChanged();
-      status(`Z set to ${band.min} … ${band.max} m (pcd2pgm default). Adjust it in Crop`);
-    }
+    mapDefaultZ();
   } else if (!topBeforeMap) setTopView(false);
   $("pane-tag-pcd").hidden = !on;
   $("map-view-btn").textContent = on ? "Hide PGM" : "Show PGM";
@@ -969,12 +977,13 @@ new ResizeObserver(() => (pgmView.fitted ? drawPgm() : fitPgm())).observe(pgmCan
 // the cloud goes back to the original file coordinates.
 async function exportMap() {
   try {
+    mapDefaultZ(); // same Z as the PGM view would use, even if it was never opened
     const g = await computeMap();
     if (!g) throw new Error("the cloud changed, try again");
     const name = `${baseName()}_map`;
     download(alg.encodePGM(g), `${name}.pgm`, "image/x-portable-graymap");
     download(alg.encodeMapYaml(g, `${name}.pgm`), `${name}.yaml`, "text/yaml");
-    status(`Saved ${name}.pgm and ${name}.yaml (${g.width} × ${g.height} @ ${ops.mapResolution} m)`);
+    status(`Saved ${name}.pgm and ${name}.yaml (${g.width} × ${g.height} @ ${ops.mapResolution} m, Z ${ops.invert ? "outside " : ""}${band.min} … ${band.max} m)`);
   } catch (e) {
     status(`Map export failed: ${e.message}`, { error: true });
   }
@@ -1109,9 +1118,21 @@ function defaultZ() {
 
 // Z after load / alignment: everything in 3D, pcd2pgm's default in the PGM view.
 function resetBand() {
+  zAuto = !state.mapView;
   if (state.mapView) defaultZ();
   else [band.min, band.max] = [floor2(state.bounds.min[2]), ceil2(state.bounds.max[2])];
   onCropChanged();
+}
+
+// True while Z is still the automatic full range from load / alignment / Reset. The first map
+// that is needed (PGM view or download) then switches it to pcd2pgm's default, so the preview
+// and the downloaded map always use the same Z. Any Z or "outside" change by the user clears it.
+function mapDefaultZ() {
+  if (!zAuto || ops.invert) return;
+  zAuto = false;
+  defaultZ();
+  onCropChanged();
+  status(`Z set to ${band.min} … ${band.max} m (pcd2pgm default). Adjust it in Crop`);
 }
 
 function resetCropXY() {
@@ -1123,6 +1144,7 @@ function resetCrop() {
   resetCropXY();
   [band.min, band.max] = [floor2(state.bounds.min[2]), ceil2(state.bounds.max[2])];
   ops.invert = false;
+  zAuto = !state.mapView; // in the PGM view the full Z is what the user now sees and gets
   onCropChanged();
 }
 
@@ -1593,6 +1615,7 @@ function updateRanges() {
 }
 
 function onModelChange(group, key) {
+  if (group === "band" || key === "invert") zAuto = false; // the user picked Z: keep it
   if (group === "band" && band.min > band.max) {
     if (key === "min") band.max = band.min;
     else band.min = band.max;

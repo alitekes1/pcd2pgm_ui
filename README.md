@@ -37,7 +37,7 @@ Open a `.pcd`, `.ply` or `.xyz` file (button or drag & drop). PCD can be ascii, 
 
 ### Crop
 
-The crop box is shown while something is cut away. Z starts at the full range; when the PGM view is opened for the first time it is set to pcd2pgm's default of 0.1 … 1.5 m above the floor. You can also right-click a point to crop X/Y around it or to use its height as Z min / Z max.
+The crop box is shown while something is cut away. Z starts at the full range; the first time a map is needed (opening the PGM view or downloading the map) it is set to pcd2pgm's default of 0.1 … 1.5 m above the floor, unless you set Z yourself. So the preview and the download always use the same Z. You can also right-click a point to crop X/Y around it or to use its height as Z min / Z max.
 
 ![Opened cloud, floor aligned](docs/cloud-3d.png)
 
