@@ -380,6 +380,19 @@ export function pcdPositionError(header) {
 }
 
 // ---------------------------------------------------------------------------
+// A number typed into a field. "," and "." both work as the decimal separator (number inputs
+// silently drop a "," in many locales, so the fields are text inputs). While typing, a value
+// outside [min, max] is not a value yet ("0" on the way to "0.05"); once the field is left it
+// is clamped. Returns null when the text is not (yet) a usable number.
+export function parseNumberField(text, min = -Infinity, max = Infinity, final = false) {
+  const s = String(text).trim().replace(",", ".");
+  const v = s === "" ? NaN : Number(s);
+  if (!Number.isFinite(v)) return null;
+  if (v < min || v > max) return final ? Math.min(max, Math.max(min, v)) : null;
+  return v;
+}
+
+// ---------------------------------------------------------------------------
 // Encoders. data = { positions: Float32Array(3n), colors: Uint8Array(3n) sRGB | null,
 //                    intensity: Float32Array(n) | null }
 const fmt = (v) => String(+v.toPrecision(9)); // float32 round-trips with 9 significant digits

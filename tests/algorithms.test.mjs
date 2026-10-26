@@ -97,6 +97,20 @@ test("pcdPositionError rejects binary x/y/z that PCDLoader would misread as floa
   assert.match(alg.pcdPositionError(head("binary_compressed", "4 4 4", "F F I")), /z.*I4/);
 });
 
+test("parseNumberField accepts , and . and only clamps once the field is left", () => {
+  const p = alg.parseNumberField;
+  assert.equal(p("0,05", 0.01, 1), 0.05);
+  assert.equal(p(" 0.07 ", 0.01, 1), 0.07);
+  assert.equal(p("1e-1", 0.01, 1), 0.1);
+  assert.equal(p("-1,5"), -1.5);
+  for (const half of ["", "-", "0,", "abc", "0.05abc", "Infinity"]) assert.equal(p(half, 0.01, 1), null, half);
+  assert.equal(p("0", 0.01, 1), null); // "0" on the way to "0.05": not applied yet
+  assert.equal(p("5", 0.01, 1), null);
+  assert.equal(p("0", 0.01, 1, true), 0.01); // field left: clamped
+  assert.equal(p("5", 0.01, 1, true), 1);
+  assert.equal(p("abc", 0.01, 1, true), null); // invalid text never becomes a value
+});
+
 test("selectInMask projects with identity view-projection", () => {
   const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const mask = new Uint8Array(4 * 4); mask[0] = 1; // top-left pixel

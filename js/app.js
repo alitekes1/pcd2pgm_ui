@@ -523,9 +523,10 @@ function commit(geometry, label, frame = null) {
 }
 
 function step(from, to, word) {
+  if (state.busy) return status("Please wait, another operation is still running…");
   cancelPending();
   const s = from.pop();
-  if (!s) return status(`Nothing to ${word.toLowerCase()}`);
+  if (!s) return status(`Nothing to ${word === "Undone" ? "undo" : "redo"}`);
   to.push(snapshot());
   const moved = !s.matrix.equals(state.matrix);
   swapGeometry(s.geometry);
@@ -613,7 +614,9 @@ async function detectGround() {
 
 const alignFloor = () =>
   busy("Finding the floor", async () => {
+    const version = state.geomVersion;
     const res = await detectGround();
+    assertSameCloud(version);
     const R = alg.rotationAlignToZ(res.normal);
     const m = new THREE.Matrix4().set(R[0], R[1], R[2], 0, R[3], R[4], R[5], 0, R[6], R[7], R[8], 0, 0, 0, 0, 1);
     m.premultiply(new THREE.Matrix4().makeTranslation(0, 0, res.d)); // floor plane -> z = 0
@@ -691,11 +694,18 @@ function applyRotation() {
 
 // ---------------------------------------------------------------------------
 // Step 2: cleanup (acts on shown points only; hidden points are left untouched)
+// A worker result is a list of indices into the geometry it was computed on. If the cloud
+// changed meanwhile (lasso Del, rotation slider, …), applying it would remove the wrong points.
+function assertSameCloud(version) {
+  if (state.geomVersion !== version) throw new Error("the cloud changed while it ran, please run it again");
+}
 async function workerKeep(op, args) {
   const vis = visibleIndices();
   if (!vis.length) throw new Error("no points shown");
+  const version = state.geomVersion;
   const sub = gatherPositions(positions(), vis);
   const kept = await runJob(op, [sub, ...args], [sub.buffer]);
+  assertSameCloud(version);
   const keep = new Uint8Array(positions().length / 3).fill(1);
   for (const v of vis) keep[v] = 0;
   for (const k of kept) keep[vis[k]] = 1;
@@ -1575,6 +1585,8 @@ dom.addEventListener("wheel", hideMenu, { passive: true });
 // ---------------------------------------------------------------------------
 // Panel: inputs with data-bind="group.key" are two-way bound to the model objects.
 const boundInputs = [...document.querySelectorAll("[data-bind]")];
+// Numeric fields are text inputs (see alg.parseNumberField), the only bound inputs of type text.
+const isNumberField = (el) => el.type === "text";
 const bindTarget = (el) => {
   const [g, k] = el.dataset.bind.split(".");
   return [model[g], k, g];
@@ -1582,7 +1594,7 @@ const bindTarget = (el) => {
 
 function refreshInputs(except = null) {
   for (const el of boundInputs) {
-    if (el === except || (el === document.activeElement && el.type === "number")) continue;
+    if (el === except || (el === document.activeElement && isNumberField(el))) continue;
     const [obj, k] = bindTarget(el);
     if (el.type === "checkbox") el.checked = obj[k];
     else if (typeof obj[k] === "number") el.value = +obj[k].toFixed(3);
@@ -1636,23 +1648,24 @@ function onModelChange(group, key) {
 }
 
 for (const el of boundInputs) {
-  el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => {
+  const apply = (final) => {
     if (!state.cloud) return;
     const [obj, k, g] = bindTarget(el);
     let v;
     if (el.type === "checkbox") v = el.checked;
-    else if (el.type === "number" || el.type === "range") {
-      v = parseFloat(el.value);
-      if (!Number.isFinite(v)) return; // half-typed value, wait for more input
-      if (el.min !== "" && el.type === "number" && g === "ops") v = Math.max(+el.min, v);
-      if (el.max !== "" && el.type === "number" && g === "ops") v = Math.min(+el.max, v);
+    else if (el.type === "range") v = parseFloat(el.value);
+    else if (isNumberField(el)) {
+      const limited = g === "ops"; // only the cleanup / map settings have hard limits
+      v = alg.parseNumberField(el.value, limited && el.min !== "" ? +el.min : -Infinity, limited && el.max !== "" ? +el.max : Infinity, final);
+      if (v === null) return; // half-typed or invalid: keep the current value
     } else v = el.value;
     obj[k] = v;
     onModelChange(g, k);
     refreshInputs(el);
-  });
-  // Show the clamped / normalized value once the user leaves a number field.
-  if (el.type === "number") el.addEventListener("change", () => refreshInputs());
+  };
+  el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => apply(false));
+  // Leaving a number field applies the clamped value and shows the normalized one.
+  if (isNumberField(el)) el.addEventListener("change", () => { apply(true); refreshInputs(); });
   // Rotation sliders bake into the geometry when the drag ends (change fires on release).
   if (el.dataset.bind.startsWith("rot.")) el.addEventListener("change", () => state.cloud && applyRotation());
 }
