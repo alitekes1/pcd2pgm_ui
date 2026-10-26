@@ -1,0 +1,137 @@
+{
+ "nav2-offset": {
+  "yaml_parsed": {
+   "image": "room_offset_map.pgm",
+   "resolution": 0.05,
+   "origin": [
+    12.5,
+    -7.25,
+    0.0
+   ],
+   "negate": 0,
+   "occupied_thresh": 0.65,
+   "free_thresh": 0.196,
+   "mode": "trinary"
+  },
+  "nav2_origin": [
+   12.5,
+   -7.25
+  ],
+  "dims_equal": true,
+  "occupied_equal": true,
+  "free_equal": true,
+  "unknown_cells": 0
+ },
+ "nav2-room10": {
+  "yaml_parsed": {
+   "image": "room10_binary_map.pgm",
+   "resolution": 0.05,
+   "origin": [
+    0,
+    0,
+    0.0
+   ],
+   "negate": 0,
+   "occupied_thresh": 0.65,
+   "free_thresh": 0.196,
+   "mode": "trinary"
+  },
+  "nav2_origin": [
+   0.0,
+   0.0
+  ],
+  "dims_equal": true,
+  "occupied_equal": true,
+  "free_equal": true,
+  "unknown_cells": 0
+ },
+ "nav2-real": {
+  "yaml_parsed": {
+   "image": "go2_mid360_new_office_route1_map.pgm",
+   "resolution": 0.05,
+   "origin": [
+    -19.092165,
+    -40.797844,
+    0.0
+   ],
+   "negate": 0,
+   "occupied_thresh": 0.65,
+   "free_thresh": 0.196,
+   "mode": "trinary"
+  },
+  "nav2_origin": [
+   -19.092165,
+   -40.797844
+  ],
+  "dims_equal": true,
+  "occupied_equal": true,
+  "free_equal": true,
+  "unknown_cells": 0
+ },
+ "ref-room10": {
+  "app_dims": [
+   201,
+   201
+  ],
+  "ref_dims": [
+   200,
+   200
+  ],
+  "app_origin": [
+   0,
+   0
+  ],
+  "ref_origin": [
+   0.0,
+   0.0
+  ],
+  "app_occupied": 880,
+  "ref_occupied": 876,
+  "overlap_identical": false,
+  "overlap_diff_cells": 553,
+  "app_extra_occupied_in_extra_col_row": 402,
+  "ref_saved_vs_app_pgm_identical": false,
+  "ref_saved_yaml": {
+   "origin": [
+    0,
+    0,
+    0
+   ],
+   "free_thresh": 0.25,
+   "occupied_thresh": 0.65
+  }
+ },
+ "ref-real": {
+  "app_dims": [
+   546,
+   896
+  ],
+  "ref_dims": [
+   546,
+   896
+  ],
+  "app_origin": [
+   -19.092165,
+   -40.797844
+  ],
+  "ref_origin": [
+   -19.092165,
+   -40.797844
+  ],
+  "app_occupied": 7439,
+  "ref_occupied": 7439,
+  "overlap_identical": true,
+  "overlap_diff_cells": 0,
+  "app_extra_occupied_in_extra_col_row": 0,
+  "ref_saved_vs_app_pgm_identical": true,
+  "ref_saved_yaml": {
+   "origin": [
+    -19.1,
+    -40.8,
+    0
+   ],
+   "free_thresh": 0.25,
+   "occupied_thresh": 0.65
+  }
+ }
+}

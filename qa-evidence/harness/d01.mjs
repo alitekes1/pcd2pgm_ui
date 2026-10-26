@@ -1,0 +1,11 @@
+import * as L from "./lib.mjs";
+const { browser, page } = await L.launch("chromium");
+await L.boot(page); await L.open(page, L.fx("room_with_outliers.pcd"));
+const s0 = await L.text(page, "status-stats");
+await L.click(page, "sor-btn"); await L.idle(page);
+await page.click("#action-bar button:has-text('Remove')"); await L.sleep(400);
+const s1 = await L.text(page, "status-stats");
+const crop = await page.evaluate(() => [...document.querySelectorAll('input[type=number][data-bind^="crop."]')].map((e) => e.value));
+await L.click(page, "map-view-btn"); const pv = await L.preview(page);
+L.record("D-01", "D", "Gürültü bulma/kaldırma sonrası sınırlar", "500 aykırı nokta gider; bulut boyutu ≈10×10×2.5 m", { before: s0, after: s1, cropInputsStillAt: crop, map: pv.info }, /10\.\d × 10\.\d × 2\.\d m/.test(s1) ? "PASS" : "FAIL");
+L.saveResults("D01"); await browser.close();
