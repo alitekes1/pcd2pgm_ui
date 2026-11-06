@@ -4,21 +4,7 @@ A browser tool that turns a SLAM point cloud into a 2D occupancy map (PGM) for R
 
 ![pcd2pgm_ui](docs/showcase.gif)
 
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/alitekes1/pcd2pgm_ui.git
-   ```
-2. Navigate to the project directory:
-   ```bash
-   cd pcd2pgm_ui
-   ```
-3. Serve the folder with any static web server, for example:
-   ```bash
-   python3 -m http.server 8000
-   ```
-   Then open `http://localhost:8000`. Three.js is loaded from a CDN, so the first load needs internet access. Local files get a per-load `?v=` query, so after an update a normal reload is enough.
+**Try it now: [alitekes1.github.io/pcd2pgm_ui](https://alitekes1.github.io/pcd2pgm_ui/)** — runs entirely in your browser, nothing to install. Three.js is loaded from a CDN, so the first load needs internet access.
 
 ## How it works
 
