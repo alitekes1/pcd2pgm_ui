@@ -1014,12 +1014,41 @@ async function exportMap() {
     const g = await computeMap();
     if (!g) throw new Error("the cloud changed, try again");
     const name = `${baseName()}_map`;
-    download(alg.encodePGM(g), `${name}.pgm`, "image/x-portable-graymap");
-    download(alg.encodeMapYaml(g, `${name}.pgm`), `${name}.yaml`, "text/yaml");
-    status(`Saved ${name}.pgm and ${name}.yaml (${g.width} × ${g.height} @ ${ops.mapResolution} m, Z ${ops.invert ? "outside " : ""}${band.min} … ${band.max} m)`);
+    // Ask before downloading: edit in the Nav2 Map Editor, or just save the files.
+    offerEdit(g, name);
   } catch (e) {
     status(`Map export failed: ${e.message}`, { error: true });
   }
+}
+
+function saveMap(g, name) {
+  download(alg.encodePGM(g), `${name}.pgm`, "image/x-portable-graymap");
+  download(alg.encodeMapYaml(g, `${name}.pgm`), `${name}.yaml`, "text/yaml");
+  status(`Saved ${name}.pgm and ${name}.yaml (${g.width} × ${g.height} @ ${ops.mapResolution} m, Z ${ops.invert ? "outside " : ""}${band.min} … ${band.max} m)`);
+}
+
+// Ask, before saving, whether the user wants to edit the map, with an in-page dialog
+// (not the browser's confirm box). The Nav2 Map Editor is a separate site on another
+// origin with no file-passing API (no postMessage, no URL param), so the browser
+// won't let us hand it the file across origins: both buttons download the files, and
+// "edit" also opens the editor for the user to drop them onto. window.open() runs
+// inside the Edit button's own click handler so it keeps the user activation the
+// pop-up blocker needs — which window.open() after an awaited step can lose.
+const MAP_EDITOR_URL = "https://vinithkumar-themorgan.github.io/nav2-map-editor/";
+function offerEdit(g, name) {
+  const dlg = $("edit-dialog");
+  $("edit-dialog-msg").textContent = "Want to make more detailed edits to the map, such as erasing noise, drawing walls, or adding labels?";
+  const yes = $("edit-dialog-yes"), no = $("edit-dialog-no");
+  const close = () => { dlg.close(); yes.onclick = no.onclick = null; };
+  yes.onclick = () => {
+    const tab = window.open(MAP_EDITOR_URL, "_blank", "noopener");
+    saveMap(g, name);
+    if (tab) status(`Nav2 Map Editor opened — drag ${name}.pgm and ${name}.yaml from your downloads onto it to edit.`);
+    else status(`Pop-up blocked. Open ${MAP_EDITOR_URL} and drop ${name}.pgm + ${name}.yaml`, { error: true });
+    close();
+  };
+  no.onclick = () => { saveMap(g, name); close(); };
+  dlg.showModal();
 }
 
 function exportCloud() {

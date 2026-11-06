@@ -4,7 +4,7 @@
     <title>pcd2pgm_ui: point cloud to Nav2 map</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' shape-rendering='crispEdges'%3E%3Crect width='64' height='64' rx='8' fill='%23cdd1d4'/%3E%3Cg fill='%23ffffff'%3E%3Crect x='14' y='14' width='36' height='36'/%3E%3C/g%3E%3Cg fill='%23111417'%3E%3Crect x='14' y='14' width='36' height='5'/%3E%3Crect x='14' y='14' width='5' height='36'/%3E%3Crect x='45' y='14' width='5' height='22'/%3E%3Crect x='14' y='45' width='20' height='5'/%3E%3Crect x='28' y='28' width='12' height='5'/%3E%3Crect x='35' y='19' width='5' height='14'/%3E%3C/g%3E%3Cg fill='%238a9098'%3E%3Crect x='40' y='40' width='10' height='10'/%3E%3C/g%3E%3C/svg%3E" />
     <script>document.write(`<link rel="stylesheet" href="css/style.css?v=${Date.now()}" />`);</script>
     <noscript><link rel="stylesheet" href="css/style.css" /></noscript>
   </head>
@@ -240,6 +240,15 @@
 
     <div id="context-menu" role="menu" hidden></div>
     <div id="drop-hint" aria-hidden="true">Drop the point cloud to open it</div>
+
+    <dialog id="edit-dialog">
+      <h2>Edit the map?</h2>
+      <p id="edit-dialog-msg" class="muted"></p>
+      <div class="edit-dialog-actions">
+        <button type="button" class="btn ghost" id="edit-dialog-no">No, just download</button>
+        <button type="button" class="btn primary" id="edit-dialog-yes">Yes, edit it ↗</button>
+      </div>
+    </dialog>
 
     <dialog id="help-dialog">
       <h2>Mouse &amp; keyboard</h2>
